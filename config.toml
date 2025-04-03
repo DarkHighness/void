@@ -7,10 +7,15 @@ mode = "line"
 [inbounds.parser]
 type = "csv"
 columns = [
-  { name = "id", type = "number" },
+  { name = "id", type = "int" },
   { name = "timestamp", type = "datetime" },
-  { name = "temperature.gpu", type = "number"}
+  { name = "temperature.gpu", type = "float"}
 ]
+
+[[outbounds]]
+type = "prometheus"
+tag = "prometheus"
+address = "env:PROMETHEUS_ADDRESS"
 
 [[pipes]]
 inbounds = ["input"]

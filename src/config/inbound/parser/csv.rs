@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{config::Verify, core::types::DataType};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CSVColumn {
     pub name: String,
     pub r#type: DataType,
@@ -12,7 +12,7 @@ pub struct CSVColumn {
     pub index: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct CSVParserConfig {
     #[serde(default = "default_delimiter")]

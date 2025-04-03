@@ -1,7 +1,7 @@
 pub mod error;
 
-use async_trait::async_trait;
 use error::Result;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::Config,
@@ -9,47 +9,10 @@ use crate::{
 };
 use log::error;
 
-use super::component::Component;
+use error::Error;
 
 pub struct Manager {
     inbounds: Vec<Box<dyn Inbound>>,
-}
-
-#[async_trait]
-impl Component for Manager {
-    type T = ();
-    type Error = error::Error;
-
-    async fn poll_async(
-        &mut self,
-        ctx: tokio_util::sync::CancellationToken,
-    ) -> std::result::Result<Self::T, Self::Error> {
-        let futs = self
-            .inbounds
-            .iter_mut()
-            .map(|inbound| {
-                let ctx = ctx.clone();
-                async move { inbound.poll_async(ctx).await }
-            })
-            .collect::<Vec<_>>();
-
-        tokio::select! {
-            futs = futures::future::join_all(futs) => {
-                futs.into_iter()
-                    .filter_map(|r| r.err())
-                    .map(Self::Error::from)
-                    .for_each(|err| {
-                        error!("Inbound error: {}", err);
-                    });
-            }
-            _ = ctx.cancelled() => {
-                // Cancellation token was triggered
-                return Err(Self::Error::Cancelled);
-            }
-        }
-
-        Ok(())
-    }
 }
 
 pub fn try_create_from_config(cfg: Config) -> Result<Manager> {
@@ -62,4 +25,34 @@ pub fn try_create_from_config(cfg: Config) -> Result<Manager> {
     let mgr = Manager { inbounds };
 
     Ok(mgr)
+}
+
+impl Manager {
+    pub async fn run(&mut self, ctx: CancellationToken) -> Result<()> {
+        loop {
+            let futs = self
+                .inbounds
+                .iter_mut()
+                .map(|inbound| {
+                    let ctx = ctx.clone();
+                    async move { inbound.poll_async(ctx).await }
+                })
+                .collect::<Vec<_>>();
+
+            tokio::select! {
+                futs = futures::future::join_all(futs) => {
+                    futs.into_iter()
+                        .filter_map(|r| r.err())
+                        .map(Error::from)
+                        .for_each(|err| {
+                            error!("Inbound error: {}", err);
+                        });
+                }
+                _ = ctx.cancelled() => {
+                    // Cancellation token was triggered
+                    return Err(Error::Cancelled);
+                }
+            }
+        }
+    }
 }

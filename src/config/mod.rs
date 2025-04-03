@@ -1,11 +1,14 @@
+pub mod env;
 pub mod error;
 pub mod inbound;
+pub mod outbound;
 pub mod pipe;
 pub mod transform;
 
 use std::path::PathBuf;
 
 pub use error::{Error, Result};
+use outbound::OutboundConfig;
 use pipe::PipeConfig;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::BufReader};
@@ -17,11 +20,10 @@ pub trait Verify {
     fn verify(&mut self) -> error::Result<()>;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub inbounds: Vec<InboundConfig>,
-    #[serde(default)]
-    pub outbounds: Vec<InboundConfig>,
+    pub outbounds: Vec<OutboundConfig>,
     #[serde(default)]
     pub transforms: Vec<TransformConfig>,
     pub pipes: Vec<PipeConfig>,

@@ -5,7 +5,7 @@ use thiserror::Error;
 pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("Parser error")]
+    #[error("Failed to parse: {0}")]
     Parser(#[from] crate::core::inbound::parser::Error),
 }
 

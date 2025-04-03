@@ -1,7 +1,7 @@
-use std::{collections::HashMap, fmt::Display, sync::Arc};
+use std::{collections::HashMap, fmt::Display, str::FromStr, sync::Arc};
 
 use chrono::TimeZone;
-use miette::{Diagnostic, IntoDiagnostic};
+use miette::Diagnostic;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -9,11 +9,17 @@ use thiserror::Error;
 #[serde(rename_all = "snake_case")]
 pub enum DataType {
     String,
-    Number,
+    Int,
+    Float,
     Bool,
     #[serde(rename = "datetime")]
     DateTime,
 }
+
+pub trait Num {}
+
+impl Num for i64 {}
+impl Num for f64 {}
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum Error {
@@ -21,8 +27,6 @@ pub enum Error {
     InvalidNumberFormat(String),
     #[error("Invalid bool format: {0}, expected: true, false, yes, no, on, off, active, inactive, not active")]
     InvalidBoolFormat(String),
-    #[error("Invalid datetime format {0}, expected: timestamp or datetime string")]
-    InvalidDatetimeFormat(String, chrono::ParseError),
     #[error("Unknown datetime format {0}")]
     UnknownDatetimeFormat(String),
     #[error("Confused timestamp zone mapping: {0}")]
@@ -35,7 +39,8 @@ impl Display for DataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DataType::String => write!(f, "string"),
-            DataType::Number => write!(f, "number"),
+            DataType::Int => write!(f, "int"),
+            DataType::Float => write!(f, "float"),
             DataType::Bool => write!(f, "bool"),
             DataType::DateTime => write!(f, "datetime"),
         }
@@ -43,17 +48,20 @@ impl Display for DataType {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Number {
-    pub value: f64,
+pub struct Number<T> {
+    pub value: T,
     pub unit: Option<String>,
 }
 
-impl Number {
-    pub fn new(value: f64) -> Self {
+impl<T> Number<T>
+where
+    T: Num,
+{
+    pub fn new(value: T) -> Self {
         Self { value, unit: None }
     }
 
-    pub fn new_with_unit(value: f64, unit: String) -> Self {
+    pub fn new_with_unit(value: T, unit: String) -> Self {
         Self {
             value,
             unit: Some(unit),
@@ -61,7 +69,10 @@ impl Number {
     }
 }
 
-impl ToString for Number {
+impl<T> ToString for Number<T>
+where
+    T: Num + Display,
+{
     fn to_string(&self) -> String {
         if let Some(unit) = &self.unit {
             format!("{} {}", self.value, unit)
@@ -75,7 +86,7 @@ impl ToString for Number {
 1. If the unit is not present, it will be serialized as a number.
 2. If the unit is present, it will be serialized as a string with the unit appended.
 */
-impl Serialize for Number {
+impl Serialize for Number<f64> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -88,20 +99,49 @@ impl Serialize for Number {
     }
 }
 
+impl Serialize for Number<i64> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if let Some(unit) = &self.unit {
+            serializer.serialize_str(&format!("{} {}", self.value, unit))
+        } else {
+            serializer.serialize_i64(self.value)
+        }
+    }
+}
+
 /*
 1. If it is a string, it should be treated as a number with the unit appended.
 2. If it is a number, it should be treated as a number without the unit.
 */
-impl<'de> Deserialize<'de> for Number {
+
+impl<'de> Deserialize<'de> for Number<i64> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        let value = parse_number_value(&value).map_err(serde::de::Error::custom)?;
+        let value = parse_number_value::<i64>(&value).map_err(serde::de::Error::custom)?;
 
         match value {
-            Value::Number(number) => Ok(number),
+            Value::Int(number) => Ok(number),
+            _ => Err(serde::de::Error::custom("expected a number")),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Number<f64> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        let value = parse_number_value::<f64>(&value).map_err(serde::de::Error::custom)?;
+
+        match value {
+            Value::Float(number) => Ok(number),
             _ => Err(serde::de::Error::custom("expected a number")),
         }
     }
@@ -111,14 +151,33 @@ impl<'de> Deserialize<'de> for Number {
 pub enum Value {
     Null,
     String(String),
-    Number(Number),
+    Int(Number<i64>),
+    Float(Number<f64>),
     Bool(bool),
     DateTime(chrono::DateTime<chrono::Utc>),
 }
 
-impl From<Number> for Value {
-    fn from(number: Number) -> Self {
-        Value::Number(number)
+impl From<i64> for Value {
+    fn from(number: i64) -> Self {
+        Value::Int(Number::new(number))
+    }
+}
+
+impl From<f64> for Value {
+    fn from(number: f64) -> Self {
+        Value::Float(Number::new(number))
+    }
+}
+
+impl From<Number<i64>> for Value {
+    fn from(number: Number<i64>) -> Self {
+        Value::Int(number)
+    }
+}
+
+impl From<Number<f64>> for Value {
+    fn from(number: Number<f64>) -> Self {
+        Value::Float(number)
     }
 }
 
@@ -156,7 +215,15 @@ impl Value {
     }
 
     pub fn is_number(&self) -> bool {
-        matches!(self, Value::Number(_))
+        matches!(self, Value::Int(_)) || matches!(self, Value::Float(_))
+    }
+
+    pub fn is_int(&self) -> bool {
+        matches!(self, Value::Int(_))
+    }
+
+    pub fn is_float(&self) -> bool {
+        matches!(self, Value::Float(_))
     }
 
     pub fn is_bool(&self) -> bool {
@@ -168,23 +235,28 @@ impl Value {
     }
 }
 
-fn parse_number_value(value: &str) -> ParseResult<Value> {
+fn parse_number_value<T>(value: &str) -> ParseResult<Value>
+where
+    T: Num + FromStr + Into<Value>,
+    Value: From<Number<T>>,
+{
     let parts: Vec<&str> = value.split_whitespace().collect();
     match parts.len() {
         1 => {
-            let number = parts[0].parse::<f64>().map_err(|_| {
+            let number = parts[0].parse::<T>().map_err(|_| {
                 Error::InvalidNumberFormat(format!("Invalid number format: {}", value))
             })?;
 
-            Ok(Value::Number(Number::new(number)))
+            Ok(number.into())
         }
         2 => {
-            let number = parts[0].parse::<f64>().map_err(|_| {
+            let number = parts[0].parse::<T>().map_err(|_| {
                 Error::InvalidNumberFormat(format!("Invalid number format: {}", value))
             })?;
 
             let unit = parts[1].to_string();
-            Ok(Value::Number(Number::new_with_unit(number, unit)))
+            let number = Number::new_with_unit(number, unit);
+            Ok(number.into())
         }
         _ => Err(Error::InvalidNumberFormat(value.to_string())),
     }
@@ -291,7 +363,8 @@ pub fn parse_value(value: &str, data_type: &DataType) -> ParseResult<Value> {
 
     let value = match data_type {
         DataType::String => value.to_string().into(),
-        DataType::Number => parse_number_value(value)?,
+        DataType::Int => parse_number_value::<i64>(value)?,
+        DataType::Float => parse_number_value::<f64>(value)?,
         DataType::Bool => parse_bool_value(value)?,
         DataType::DateTime => parse_datetime_value(value)?,
     };

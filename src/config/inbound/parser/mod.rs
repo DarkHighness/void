@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Verify;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum ParserConfig {

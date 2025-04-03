@@ -9,11 +9,8 @@ use tokio::{net::UnixListener, sync::mpsc, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::inbound::{parser::ParserConfig, ScanMode},
-    core::{
-        component::Component,
-        tag::{HasTag, TagId},
-    },
+    config::inbound::{unix::UnixSocketConfig, ScanMode},
+    core::tag::{HasTag, TagId},
 };
 
 use super::error::Result;
@@ -37,12 +34,9 @@ pub(crate) struct UnixSocketInbound {
 }
 
 impl UnixSocketInbound {
-    pub fn try_create_from_config(
-        tag: TagId,
-        mode: ScanMode,
-        path: PathBuf,
-        parser_cfg: ParserConfig,
-    ) -> Result<Self> {
+    pub fn try_create_from_config(cfg: UnixSocketConfig) -> Result<Self> {
+        let path = cfg.path;
+
         if path.exists() {
             std::fs::remove_file(&path)?;
         }
@@ -52,12 +46,12 @@ impl UnixSocketInbound {
         }
 
         let socket = UnixListener::bind(&path)?;
-        let parser = super::parser::try_create_from_config(parser_cfg)?;
+        let parser = super::parser::try_create_from_config(cfg.parser)?;
         let (tx, rx) = mpsc::channel(1024);
 
         let inbound = UnixSocketInbound {
-            tag,
-            mode,
+            tag: cfg.tag,
+            mode: cfg.mode,
             path,
             listener: socket,
             connection_handles: Vec::new(),
@@ -93,14 +87,11 @@ impl HasTag for UnixSocketInbound {
 }
 
 #[async_trait]
-impl Component for UnixSocketInbound {
-    type T = ();
-    type Error = super::error::Error;
-
+impl Inbound for UnixSocketInbound {
     async fn poll_async(
         &mut self,
         ctx: tokio_util::sync::CancellationToken,
-    ) -> std::result::Result<Self::T, Self::Error> {
+    ) -> std::result::Result<(), super::Error> {
         let new_connection = self.listener.accept();
 
         tokio::select! {
@@ -114,7 +105,7 @@ impl Component for UnixSocketInbound {
                 let handle = UnixConnection::spawn(
                     stream,
                     addr,
-                    self.mode.clone(),
+                    self.mode,
                     self.tx.clone(),
                     self.ctx.clone(),
                 );
@@ -132,5 +123,3 @@ impl Component for UnixSocketInbound {
         Ok(())
     }
 }
-
-impl Inbound for UnixSocketInbound {}

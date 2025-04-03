@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::tag::TagId;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PipeConfig {
     #[serde(default)]
     pub inbounds: Vec<TagId>,

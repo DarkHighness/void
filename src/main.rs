@@ -1,7 +1,7 @@
 pub(crate) mod config;
 pub(crate) mod core;
 
-use core::{component::Component, manager};
+use core::manager;
 use std::{fmt::Arguments, path::PathBuf};
 
 use config::Config;
@@ -81,8 +81,8 @@ pub async fn main() -> miette::Result<()> {
     .into_diagnostic()?;
 
     let mut mgr = manager::try_create_from_config(config)?;
+    mgr.run(child_token).await?;
 
-    loop {
-        mgr.poll_async(child_token.clone()).await?;
-    }
+    info!("Application has exited");
+    Ok(())
 }
