@@ -1,13 +1,13 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use log::debug;
 
 use crate::{
     config::inbound::parser::csv::CSVParserConfig,
-    core::types::{parse_value, DataType},
+    core::types::{parse_value, DataType, Record},
 };
 
-use super::{ParsedRecord, Result};
+use super::Result;
 
 pub struct Parser {
     delimiter: char,
@@ -35,7 +35,7 @@ impl Parser {
 }
 
 impl super::base::Parser for Parser {
-    fn parse(&self, data: String) -> super::Result<Vec<super::ParsedRecord>> {
+    fn parse(&self, data: String) -> super::Result<Vec<Record>> {
         let mut reader = csv::ReaderBuilder::new()
             .delimiter(self.delimiter as u8)
             .has_headers(false)
@@ -48,13 +48,21 @@ impl super::base::Parser for Parser {
         let parsed_records = records
             .into_iter()
             .map(|record| {
-                let mut map = ParsedRecord::new();
+                let mut map = Record::new();
 
-                if self.index_name_types.len() != record.len() {
+                if self.index_name_types.len() > record.len() {
+                    return Err(super::Error::InvalidRecord(format!(
+                        "Record has fewer fields than expected. Expected: {}, Found: {}",
+                        self.index_name_types.len(),
+                        record.len()
+                    )));
+                }
+
+                if self.index_name_types.len() < record.len() {
                     debug!(
-                        "Record length {} does not match expected length {}",
-                        record.len(),
-                        self.index_name_types.len()
+                        "Record has more fields than expected. Expected: {}, Found: {}",
+                        self.index_name_types.len(),
+                        record.len()
                     );
                 }
 

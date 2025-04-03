@@ -6,7 +6,7 @@ use std::{fmt::Arguments, path::PathBuf};
 
 use config::Config;
 use fern::colors::{Color, ColoredLevelConfig};
-use log::info;
+use log::{info, warn};
 use miette::IntoDiagnostic;
 
 fn setup_logger() -> std::result::Result<(), fern::InitError> {
@@ -75,7 +75,7 @@ pub async fn main() -> miette::Result<()> {
     let child_token = ctx.child_token();
 
     ctrlc::set_handler(move || {
-        info!("Received Ctrl+C, shutting down...");
+        warn!("Received Ctrl+C, shutting down...");
         ctx.cancel();
     })
     .into_diagnostic()?;
@@ -85,6 +85,4 @@ pub async fn main() -> miette::Result<()> {
     loop {
         mgr.poll_async(child_token.clone()).await?;
     }
-
-    Ok(())
 }

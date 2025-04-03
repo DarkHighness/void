@@ -1,11 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
-
-use crate::core::types::Value;
+use crate::core::types::Record;
 
 use super::Result;
 
 pub trait Parser: Send + Sync {
-    fn parse(&self, data: String) -> Result<Vec<ParsedRecord>>;
+    fn parse(&self, data: String) -> Result<Vec<Record>>;
 }
-
-pub type ParsedRecord = HashMap<Arc<str>, Value>;

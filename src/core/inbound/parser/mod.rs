@@ -2,7 +2,7 @@ mod base;
 mod csv;
 mod error;
 
-pub use base::{ParsedRecord, Parser};
+pub use base::Parser;
 pub use error::{Error, Result};
 
 use crate::config::inbound::parser::ParserConfig;

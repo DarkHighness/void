@@ -9,6 +9,7 @@ type = "csv"
 columns = [
   { name = "id", type = "number" },
   { name = "timestamp", type = "datetime" },
+  { name = "temperature.gpu", type = "number"}
 ]
 
 [[pipes]]

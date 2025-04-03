@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
 use chrono::TimeZone;
 use miette::{Diagnostic, IntoDiagnostic};
@@ -298,3 +298,5 @@ pub fn parse_value(value: &str, data_type: &DataType) -> ParseResult<Value> {
 
     Ok(value)
 }
+
+pub type Record = HashMap<Arc<str>, Value>;

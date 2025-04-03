@@ -7,6 +7,7 @@ use crate::{
     config::Config,
     core::inbound::{self, Inbound},
 };
+use log::error;
 
 use super::component::Component;
 
@@ -32,14 +33,19 @@ impl Component for Manager {
             })
             .collect::<Vec<_>>();
 
-        let _ = futures::future::join_all(futs)
-            .await
-            .into_iter()
-            .map(|r| r.map_err(Self::Error::from))
-            .collect::<Result<Vec<_>>>()?;
-
-        if ctx.is_cancelled() {
-            return Err(Self::Error::Cancelled);
+        tokio::select! {
+            futs = futures::future::join_all(futs) => {
+                futs.into_iter()
+                    .filter_map(|r| r.err())
+                    .map(Self::Error::from)
+                    .for_each(|err| {
+                        error!("Inbound error: {}", err);
+                    });
+            }
+            _ = ctx.cancelled() => {
+                // Cancellation token was triggered
+                return Err(Self::Error::Cancelled);
+            }
         }
 
         Ok(())
