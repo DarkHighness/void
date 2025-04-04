@@ -1,13 +1,31 @@
-use serde::{Deserialize, Serialize};
+// pub mod csv;
 
-use crate::core::tag::TagId;
+// use std::fmt::Display;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PipeConfig {
-    #[serde(default)]
-    pub inbounds: Vec<TagId>,
-    #[serde(default)]
-    pub outbounds: Vec<TagId>,
-    #[serde(default)]
-    pub stages: Vec<TagId>,
-}
+// use serde::{Deserialize, Serialize};
+
+// use super::Verify;
+
+// #[derive(Debug, Serialize, Deserialize)]
+// #[serde(rename_all = "snake_case")]
+// #[serde(tag = "type")]
+// pub enum PipeConfig {
+//     #[serde(rename = "csv")]
+//     CSV(csv::CSVPipeConfig),
+// }
+
+// impl Display for PipeConfig {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         match self {
+//             PipeConfig::CSV(config) => write!(f, "CSVParserConfig {{ {} }}", config),
+//         }
+//     }
+// }
+
+// impl Verify for PipeConfig {
+//     fn verify(&mut self) -> crate::config::Result<()> {
+//         match self {
+//             PipeConfig::CSV(config) => config.verify(),
+//         }
+//     }
+// }

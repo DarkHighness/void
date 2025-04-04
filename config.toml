@@ -3,21 +3,18 @@ type = "unix_socket"
 tag = "input"
 path = "/tmp/mtproxy.sock"
 mode = "line"
-
-[inbounds.parser]
-type = "csv"
-columns = [
-  { name = "id", type = "int" },
-  { name = "timestamp", type = "datetime" },
-  { name = "temperature.gpu", type = "float"}
-]
+protocol = "input"
 
 [[outbounds]]
 type = "prometheus"
 tag = "prometheus"
 address = "env:PROMETHEUS_ADDRESS"
 
-[[pipes]]
-inbounds = ["input"]
-outbounds = []
-stages = []
+[[protocols]]
+tag = "input"
+type = "csv"
+fields = [
+  { name = "id", type = "int" },
+  { name = "timestamp", type = "datetime" },
+  { name = "temperature.gpu", type = "float"}
+]

@@ -1,4 +1,3 @@
-pub mod parser;
 pub mod unix;
 
 use std::fmt::Display;
@@ -38,6 +37,14 @@ pub enum InboundConfig {
     UnixSocket(unix::UnixSocketConfig),
 }
 
+impl InboundConfig {
+    pub fn protocol(&self) -> TagId {
+        match self {
+            InboundConfig::UnixSocket(cfg) => From::from(&cfg.protocol),
+        }
+    }
+}
+
 impl Display for InboundConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -49,7 +56,7 @@ impl Display for InboundConfig {
 impl HasTag for InboundConfig {
     fn tag(&self) -> TagId {
         match self {
-            InboundConfig::UnixSocket(cfg) => cfg.tag.clone(),
+            InboundConfig::UnixSocket(cfg) => From::from(&cfg.tag),
         }
     }
 }

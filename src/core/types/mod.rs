@@ -1,4 +1,9 @@
+mod error;
 mod record;
 mod r#type;
+mod value;
 
-pub use r#type::{parse_value, DataType, Error, Record, Value};
+pub use error::{Error, Result};
+pub use r#type::DataType;
+pub use record::Record;
+pub use value::{parse_value, Value};

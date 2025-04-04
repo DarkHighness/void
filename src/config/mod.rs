@@ -3,16 +3,15 @@ pub mod error;
 pub mod inbound;
 pub mod outbound;
 pub mod pipe;
-pub mod transform;
+pub mod protocol;
 
 use std::path::PathBuf;
 
 pub use error::{Error, Result};
-use outbound::OutboundConfig;
-use pipe::PipeConfig;
+pub use outbound::OutboundConfig;
+pub use protocol::ProtocolConfig;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::BufReader};
-use transform::TransformConfig;
 
 use crate::{config::inbound::InboundConfig, core::tag::find_duplicate_tags};
 
@@ -24,9 +23,7 @@ pub trait Verify {
 pub struct Config {
     pub inbounds: Vec<InboundConfig>,
     pub outbounds: Vec<OutboundConfig>,
-    #[serde(default)]
-    pub transforms: Vec<TransformConfig>,
-    pub pipes: Vec<PipeConfig>,
+    pub protocols: Vec<ProtocolConfig>,
 }
 
 impl Config {

@@ -1,19 +1,21 @@
-use crate::config::inbound::InboundConfig;
+use crate::config::{inbound::InboundConfig, ProtocolConfig};
 
-pub mod base;
-pub mod error;
-mod parser;
+mod base;
+mod error;
 mod unix;
 
 pub use base::Inbound;
-pub use error::Error;
-use error::Result;
+pub use error::{Error, Result};
 
-pub fn try_create_from_config(inbound_config: InboundConfig) -> Result<Box<dyn base::Inbound>> {
+pub fn try_create_from(
+    inbound_config: InboundConfig,
+    protocol_config: ProtocolConfig,
+) -> Result<Box<dyn base::Inbound>> {
     let inbound = match inbound_config {
-        InboundConfig::UnixSocket(cfg) => {
-            Box::new(unix::UnixSocketInbound::try_create_from_config(cfg)?)
-        }
+        InboundConfig::UnixSocket(cfg) => Box::new(unix::UnixSocketInbound::try_create_from(
+            cfg,
+            protocol_config,
+        )?),
         _ => unimplemented!(),
     };
 

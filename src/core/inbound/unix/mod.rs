@@ -9,20 +9,21 @@ use tokio::{net::UnixListener, sync::mpsc, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::inbound::{unix::UnixSocketConfig, ScanMode},
-    core::tag::{HasTag, TagId},
+    config::{
+        inbound::{unix::UnixSocketConfig, ScanMode},
+        ProtocolConfig,
+    },
+    core::tag::{HasTag, InboundTagId, TagId},
 };
 
+use super::base::Inbound;
 use super::error::Result;
-use super::{base::Inbound, parser::Parser};
 
 pub(crate) struct UnixSocketInbound {
-    tag: TagId,
+    tag: InboundTagId,
 
     path: PathBuf,
     mode: ScanMode,
-
-    parser: Box<dyn Parser>,
 
     listener: UnixListener,
 
@@ -34,7 +35,7 @@ pub(crate) struct UnixSocketInbound {
 }
 
 impl UnixSocketInbound {
-    pub fn try_create_from_config(cfg: UnixSocketConfig) -> Result<Self> {
+    pub fn try_create_from(cfg: UnixSocketConfig, protocol_cfg: ProtocolConfig) -> Result<Self> {
         let path = cfg.path;
 
         if path.exists() {
@@ -46,7 +47,6 @@ impl UnixSocketInbound {
         }
 
         let socket = UnixListener::bind(&path)?;
-        let parser = super::parser::try_create_from_config(cfg.parser)?;
         let (tx, rx) = mpsc::channel(1024);
 
         let inbound = UnixSocketInbound {
@@ -58,7 +58,6 @@ impl UnixSocketInbound {
             ctx: CancellationToken::new(),
             tx,
             rx,
-            parser,
         };
 
         info!(
@@ -82,7 +81,7 @@ impl Drop for UnixSocketInbound {
 
 impl HasTag for UnixSocketInbound {
     fn tag(&self) -> TagId {
-        self.tag.clone()
+        (&self.tag).into()
     }
 }
 
@@ -113,8 +112,7 @@ impl Inbound for UnixSocketInbound {
             }
             data = self.rx.recv() => match data {
                 Some(data) => {
-                    let record = self.parser.parse(data)?;
-                    info!("{}: {:?}", self.tag, record)
+                    info!("{}", self.tag)
                 }
                 None => return Ok(()),
             }

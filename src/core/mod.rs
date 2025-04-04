@@ -1,6 +1,7 @@
 pub mod inbound;
 pub mod manager;
 pub mod outbound;
+pub mod pipe;
+pub mod protocol;
 pub mod tag;
-pub mod transform;
 pub mod types;

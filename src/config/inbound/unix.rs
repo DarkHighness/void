@@ -2,37 +2,36 @@ use std::{fmt::Display, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{config::Verify, core::tag::TagId};
+use crate::{
+    config::Verify,
+    core::tag::{HasTag, InboundTagId, ProtocolTagId, TagId},
+};
 
-use super::{parser, ScanMode};
+use super::ScanMode;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UnixSocketConfig {
-    pub tag: TagId,
+    pub tag: InboundTagId,
     #[serde(default)]
     pub mode: ScanMode,
-    pub parser: parser::ParserConfig,
-
     pub path: PathBuf,
+    pub protocol: ProtocolTagId,
 }
 
 impl Display for UnixSocketConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "UnixSocketConfig {{ tag: {}, mode: {:?}, path: {}, parser: {} }}",
+            "UnixSocketConfig {{ tag: {}, mode: {:?}, path: {}}}",
             self.tag,
             self.mode,
             self.path.display(),
-            self.parser
         )
     }
 }
 
 impl Verify for UnixSocketConfig {
     fn verify(&mut self) -> crate::config::error::Result<()> {
-        self.parser.verify()?;
-
         Ok(())
     }
 }
