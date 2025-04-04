@@ -9,12 +9,8 @@ use tokio::{net::UnixListener, sync::mpsc, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::{
-        inbound::{unix::UnixSocketConfig, ScanMode},
-        ProtocolConfig,
-    },
+    config::{inbound::unix::UnixSocketConfig, ProtocolConfig},
     core::{
-        protocol::Protocol,
         tag::{HasTag, InboundTagId, TagId},
         types::Record,
     },

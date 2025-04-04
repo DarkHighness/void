@@ -1,8 +1,7 @@
 pub mod error;
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use error::Result;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -11,7 +10,7 @@ use crate::{
 };
 use log::error;
 
-use error::Error;
+pub use error::{Error, Result};
 
 use super::tag::HasTag;
 

@@ -1,13 +1,9 @@
 use log::error;
-use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
-    net::{unix::SocketAddr, UnixStream},
-    sync::mpsc,
-};
+use tokio::{net::UnixStream, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::{inbound::ScanMode, ProtocolConfig},
+    config::ProtocolConfig,
     core::{
         protocol::{self, Protocol},
         types::Record,
