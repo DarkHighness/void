@@ -1,22 +1,34 @@
-use std::{fmt::Display, str::FromStr};
+use std::{collections::HashMap, fmt::Display, str::FromStr, sync::Arc};
 
 use chrono::TimeZone;
 use serde::{Deserialize, Serialize};
+use std::hash::Hash;
+use string_interner::{DefaultBackend, StringInterner};
 
 use super::DataType;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub const VALUE_TYPE_NULL: &str = "null";
+pub const VALUE_TYPE_STRING: &str = "string";
+pub const VALUE_TYPE_INT: &str = "int";
+pub const VALUE_TYPE_FLOAT: &str = "float";
+pub const VALUE_TYPE_BOOL: &str = "bool";
+pub const VALUE_TYPE_DATETIME: &str = "datetime";
+pub const VALUE_TYPE_MAP: &str = "map";
+pub const VALUE_TYPE_ARRAY: &str = "array";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Value {
     Null,
-    String(String),
+    String(super::string::Symbol),
     Int(Number<i64>),
     Float(Number<f64>),
     Bool(bool),
     DateTime(chrono::DateTime<chrono::Utc>),
+    Map(HashMap<Value, Value>),
+    Array(Vec<Value>),
 }
 
 pub trait Num {}
-
 impl Num for i64 {}
 impl Num for f64 {}
 
@@ -54,6 +66,27 @@ where
         }
     }
 }
+
+impl Hash for Number<i64> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+        if let Some(unit) = &self.unit {
+            unit.hash(state);
+        }
+    }
+}
+
+impl Hash for Number<f64> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.to_bits().hash(state);
+        if let Some(unit) = &self.unit {
+            unit.hash(state);
+        }
+    }
+}
+
+impl Eq for Number<i64> {}
+impl Eq for Number<f64> {}
 
 /*
 1. If the unit is not present, it will be serialized as a number.
@@ -146,7 +179,7 @@ impl From<Number<f64>> for Value {
 
 impl From<String> for Value {
     fn from(string: String) -> Self {
-        Value::String(string)
+        Value::String(super::string::intern(string))
     }
 }
 
@@ -164,7 +197,52 @@ impl From<chrono::DateTime<chrono::Utc>> for Value {
 
 impl From<&str> for Value {
     fn from(string: &str) -> Self {
-        Value::String(string.to_string())
+        Value::String(super::string::intern(string))
+    }
+}
+
+impl From<super::string::Symbol> for Value {
+    fn from(string: super::string::Symbol) -> Self {
+        Value::String(string)
+    }
+}
+
+impl From<HashMap<Value, Value>> for Value {
+    fn from(map: HashMap<Value, Value>) -> Self {
+        Value::Map(map)
+    }
+}
+
+impl From<HashMap<super::string::Symbol, Value>> for Value {
+    fn from(map: HashMap<super::string::Symbol, Value>) -> Self {
+        let map = map
+            .into_iter()
+            .map(|(key, value)| (Value::String(key), value))
+            .collect();
+        Value::Map(map)
+    }
+}
+
+impl From<Vec<(super::string::Symbol, Value)>> for Value {
+    fn from(array: Vec<(super::string::Symbol, Value)>) -> Self {
+        let map = array
+            .into_iter()
+            .map(|(key, value)| (Value::String(key), value))
+            .collect();
+        Value::Map(map)
+    }
+}
+
+impl From<Vec<(Value, Value)>> for Value {
+    fn from(array: Vec<(Value, Value)>) -> Self {
+        let map = array.into_iter().collect();
+        Value::Map(map)
+    }
+}
+
+impl From<Vec<Value>> for Value {
+    fn from(array: Vec<Value>) -> Self {
+        Value::Array(array)
     }
 }
 
@@ -195,6 +273,62 @@ impl Value {
 
     pub fn is_datetime(&self) -> bool {
         matches!(self, Value::DateTime(_))
+    }
+
+    pub fn is_map(&self) -> bool {
+        matches!(self, Value::Map(_))
+    }
+
+    pub fn is_array(&self) -> bool {
+        matches!(self, Value::Array(_))
+    }
+}
+
+impl Hash for Value {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Value::Null => VALUE_TYPE_NULL.hash(state),
+            Value::String(string) => {
+                VALUE_TYPE_STRING.hash(state);
+                string.hash(state);
+            }
+            Value::Int(number) => {
+                VALUE_TYPE_INT.hash(state);
+                number.value.hash(state);
+                if let Some(unit) = &number.unit {
+                    unit.hash(state);
+                }
+            }
+            Value::Float(number) => {
+                VALUE_TYPE_FLOAT.hash(state);
+                number.value.to_bits().hash(state);
+                if let Some(unit) = &number.unit {
+                    unit.hash(state);
+                }
+            }
+            Value::Bool(boolean) => {
+                VALUE_TYPE_BOOL.hash(state);
+                boolean.hash(state);
+            }
+            Value::DateTime(datetime) => {
+                VALUE_TYPE_DATETIME.hash(state);
+                datetime.timestamp().hash(state);
+                datetime.timestamp_subsec_nanos().hash(state);
+            }
+            Value::Map(map) => {
+                VALUE_TYPE_MAP.hash(state);
+                for (key, value) in map {
+                    key.hash(state);
+                    value.hash(state);
+                }
+            }
+            Value::Array(array) => {
+                VALUE_TYPE_ARRAY.hash(state);
+                for value in array {
+                    value.hash(state);
+                }
+            }
+        }
     }
 }
 
@@ -321,7 +455,7 @@ pub fn parse_value(value: &str, data_type: &DataType) -> super::Result<Value> {
     }
 
     let value = match data_type {
-        DataType::String => value.to_string().into(),
+        DataType::String => value.into(),
         DataType::Int => parse_number_value::<i64>(value)?,
         DataType::Float => parse_number_value::<f64>(value)?,
         DataType::Bool => parse_bool_value(value)?,

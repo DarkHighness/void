@@ -4,11 +4,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::Verify,
-    core::tag::{InboundTagId, ProtocolTagId},
+    core::tag::{InboundTagId, ProtocolTagId, ScopedTagId, TagId},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UnixSocketConfig {
+    #[serde(default = "default_unix_socket_tag")]
     pub tag: InboundTagId,
     pub path: PathBuf,
     pub protocol: ProtocolTagId,
@@ -29,4 +30,8 @@ impl Verify for UnixSocketConfig {
     fn verify(&mut self) -> super::Result<()> {
         Ok(())
     }
+}
+
+fn default_unix_socket_tag() -> InboundTagId {
+    InboundTagId::new("unix_socket")
 }

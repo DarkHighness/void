@@ -1,19 +1,20 @@
-// mod base;
-// mod csv;
-// mod error;
+mod base;
+mod error;
+mod timeseries;
 
-// pub use base::Pipe;
-// pub use error::{Error, Result};
+pub use base::Pipe;
+pub use error::{Error, Result};
 
-// use crate::config::pipe::PipeConfig;
+use crate::config::pipe::PipeConfig;
 
-// pub fn try_create_from_config(cfg: PipeConfig) -> Result<Box<dyn Pipe>> {
-//     let parser: Box<dyn Pipe> = match cfg {
-//         PipeConfig::CSV(cfg) => {
-//             let parser = csv::CSVPipe::try_create_from_config(cfg)?;
-//             Box::new(parser)
-//         }
-//     };
+use super::manager::ChannelGraph;
 
-//     Ok(parser)
-// }
+pub fn try_create_from(cfg: PipeConfig, channels: &ChannelGraph) -> Result<Box<dyn Pipe>> {
+    let pipe: Box<dyn Pipe> = match cfg {
+        PipeConfig::Timeseries(cfg) => {
+            Box::new(timeseries::TimeseriesPipe::try_create_from(cfg, channels)?)
+        }
+    };
+
+    Ok(pipe)
+}

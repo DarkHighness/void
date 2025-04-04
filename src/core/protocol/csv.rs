@@ -7,7 +7,7 @@ use tokio::io::AsyncReadExt;
 
 use crate::{
     config::protocol::csv::CSVProtocolConfig,
-    core::types::{parse_value, DataType, Record},
+    core::types::{parse_value, DataType, Record, Symbol},
 };
 
 pub struct CSVProtocol<R> {
@@ -17,7 +17,7 @@ pub struct CSVProtocol<R> {
     has_header: bool,
     header_skipped: bool,
 
-    fields: HashMap<usize, (Arc<str>, DataType)>,
+    fields: HashMap<usize, (Symbol, DataType)>,
     num_fields: usize,
 
     input_buf: bytes::BytesMut,
@@ -36,10 +36,9 @@ where
             .fields
             .into_iter()
             .map(|c| {
-                let name = c.name.into();
                 let r#type = c.r#type;
                 let index = c.index;
-                (index, (name, r#type))
+                (index, (c.name, r#type))
             })
             .collect::<HashMap<usize, _>>();
 
@@ -80,7 +79,7 @@ where
 }
 
 #[async_trait]
-impl<R> super::Protocol for CSVProtocol<R>
+impl<R> super::ProtocolParser for CSVProtocol<R>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {

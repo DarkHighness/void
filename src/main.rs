@@ -67,9 +67,9 @@ pub async fn main() -> miette::Result<()> {
     setup_logger().into_diagnostic()?;
 
     info!("Starting the application");
-
     let path = PathBuf::from("config.toml");
     let config = Config::load_from_file(&path)?;
+    info!("Loaded config from {}", path.display());
 
     let ctx = tokio_util::sync::CancellationToken::new();
     let child_token = ctx.child_token();

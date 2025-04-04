@@ -4,14 +4,19 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use connection::UnixConnection;
-use log::{debug, info};
-use tokio::{net::UnixListener, sync::mpsc, task::JoinHandle};
+use log::{debug, error, info};
+use tokio::{
+    net::UnixListener,
+    sync::{broadcast, mpsc},
+    task::JoinHandle,
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{inbound::unix::UnixSocketConfig, ProtocolConfig},
     core::{
-        tag::{HasTag, InboundTagId, TagId},
+        manager::ChannelGraph,
+        tag::{HasTag, TagId},
         types::Record,
     },
 };
@@ -19,8 +24,10 @@ use crate::{
 use super::base::Inbound;
 use super::error::Result;
 
+pub const UNIX_SOCKET_CONNECTION_BUFFER_SIZE: usize = 64;
+
 pub(crate) struct UnixSocketInbound {
-    tag: InboundTagId,
+    tag: TagId,
     path: PathBuf,
 
     listener: UnixListener,
@@ -30,11 +37,16 @@ pub(crate) struct UnixSocketInbound {
     rx: mpsc::Receiver<Record>,
     handles: Vec<JoinHandle<()>>,
 
+    outbound_channels: Vec<broadcast::Sender<Record>>,
     protocol: ProtocolConfig,
 }
 
 impl UnixSocketInbound {
-    pub fn try_create_from(cfg: UnixSocketConfig, protocol_cfg: ProtocolConfig) -> Result<Self> {
+    pub fn try_create_from(
+        cfg: UnixSocketConfig,
+        protocol_cfg: ProtocolConfig,
+        channel_graph: &ChannelGraph,
+    ) -> Result<Self> {
         let path = cfg.path;
 
         if path.exists() {
@@ -45,18 +57,21 @@ impl UnixSocketInbound {
             std::fs::create_dir_all(parent)?;
         }
 
-        let socket = UnixListener::bind(&path)?;
+        let tag = cfg.tag.into();
 
-        let (tx, rx) = mpsc::channel(64);
+        let socket = UnixListener::bind(&path)?;
+        let (tx, rx) = mpsc::channel(UNIX_SOCKET_CONNECTION_BUFFER_SIZE);
+        let outbound_channels = channel_graph.unsafe_inbound_outputs(&tag);
 
         let inbound = UnixSocketInbound {
-            tag: cfg.tag,
+            tag,
             path,
             listener: socket,
             ctx: CancellationToken::new(),
             tx,
             rx,
             handles: Vec::new(),
+            outbound_channels,
             protocol: protocol_cfg,
         };
 
@@ -81,13 +96,13 @@ impl Drop for UnixSocketInbound {
 
 impl HasTag for UnixSocketInbound {
     fn tag(&self) -> TagId {
-        (&self.tag).into()
+        self.tag.clone()
     }
 }
 
 #[async_trait]
 impl Inbound for UnixSocketInbound {
-    async fn poll_async(
+    async fn poll(
         &mut self,
         ctx: tokio_util::sync::CancellationToken,
     ) -> std::result::Result<(), super::Error> {
@@ -95,10 +110,6 @@ impl Inbound for UnixSocketInbound {
 
         tokio::select! {
             _ = ctx.cancelled() => return Ok(()),
-            _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
-                debug!("inbound \"{}\" not ready", self.tag);
-                return Ok(());
-            }
             Ok((stream, addr)) = new_connection => {
                 info!("inbound \"{}\" accept new connection \"{:?}\" ", self.tag, addr);
                 let conn = UnixConnection::try_create_from(
@@ -109,12 +120,13 @@ impl Inbound for UnixSocketInbound {
                 )?;
                 let handle = conn.spawn();
                 self.handles.push(handle);
-                info!("inbound \"{}\" spawn new reader \"{:?}\" ", self.tag, addr);
+                info!("inbound \"{}\" spawn a new connection \"{:?}\" ", self.tag, addr);
             }
-            data = self.rx.recv() => match data {
-                Some(data) => {
-                    info!("{} {:?}", self.tag, data)
-                }
+            record = self.rx.recv() => match record {
+                Some(record) => self.outbound_channels.iter().for_each(|tx| match tx.send(record.clone()){
+                    Ok(n) => debug!("inbound \"{}\" send record to outbound {} channel(s)", n, self.tag),
+                    Err(e) => error!("inbound \"{}\" send record to outbound channel error: {:?}", self.tag, e),
+                }),
                 None => return Ok(()),
             }
         }

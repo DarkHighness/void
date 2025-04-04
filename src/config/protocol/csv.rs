@@ -6,13 +6,13 @@ use crate::{
     config::Verify,
     core::{
         tag::{ProtocolTagId, TagId},
-        types::DataType,
+        types::{DataType, Symbol},
     },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CSVField {
-    pub name: String,
+    pub name: Symbol,
     pub r#type: DataType,
     #[serde(default)]
     pub index: usize,
@@ -21,6 +21,7 @@ pub struct CSVField {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct CSVProtocolConfig {
+    #[serde(default = "default_csv_tag")]
     pub tag: ProtocolTagId,
 
     #[serde(default)]
@@ -109,4 +110,8 @@ impl Verify for CSVProtocolConfig {
 
 fn default_delimiter() -> char {
     ','
+}
+
+fn default_csv_tag() -> ProtocolTagId {
+    ProtocolTagId::new("csv")
 }

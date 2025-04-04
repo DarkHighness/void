@@ -1,10 +1,15 @@
+use std::thread::JoinHandle;
+
+use async_trait::async_trait;
+use tokio::sync::broadcast;
+use tokio_util::sync::CancellationToken;
+
 use crate::core::{
     tag::{HasTag, TagId},
     types::Record,
 };
 
-use super::Result;
-
+#[async_trait]
 pub trait Pipe: HasTag + Send + Sync {
-    fn pipe(&self, data: String) -> Result<Vec<Record>>;
+    async fn poll(&mut self, ctx: CancellationToken) -> super::Result<()>;
 }

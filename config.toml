@@ -1,17 +1,21 @@
 [[inbounds]]
 type = "unix_socket"
-tag = "input"
 path = "/tmp/mtproxy.sock"
 mode = "line"
-protocol = "input"
+protocol = "csv"
 
 [[outbounds]]
-type = "prometheus"
-tag = "prometheus"
-address = "PROMETHEUS_ADDRESS"
+type = "stdout"
+inbounds = ["pipe:timeseries"]
+
+[[pipes]]
+type = "timeseries"
+data_inbounds = ["inbound:unix_socket"]
+values = ["utilization.gpu"]
+labels = ["id"]
+timestamp = "timestamp"
 
 [[protocols]]
-tag = "input"
 type = "csv"
 has_header = true
 fields = [
