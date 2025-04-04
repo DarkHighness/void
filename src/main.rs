@@ -1,5 +1,6 @@
 pub(crate) mod config;
 pub(crate) mod core;
+pub(crate) mod utils;
 
 use core::manager;
 use std::{fmt::Arguments, path::PathBuf};

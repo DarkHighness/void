@@ -3,7 +3,6 @@ use std::{collections::HashMap, fmt::Display, str::FromStr, sync::Arc};
 use chrono::TimeZone;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
-use string_interner::{DefaultBackend, StringInterner};
 
 use super::DataType;
 
@@ -327,6 +326,35 @@ impl Hash for Value {
                 for value in array {
                     value.hash(state);
                 }
+            }
+        }
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Null => write!(f, "null"),
+            Value::String(string) => write!(f, "{}", string),
+            Value::Int(number) => write!(f, "{}", number.to_string()),
+            Value::Float(number) => write!(f, "{}", number.to_string()),
+            Value::Bool(boolean) => write!(f, "{}", boolean),
+            Value::DateTime(datetime) => write!(f, "{}", datetime),
+            Value::Map(map) => {
+                let map_str = map
+                    .iter()
+                    .map(|(key, value)| format!("{}: {}", key, value))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "{{{}}}", map_str)
+            }
+            Value::Array(array) => {
+                let array_str = array
+                    .iter()
+                    .map(|value| format!("{}", value))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "[{}]", array_str)
             }
         }
     }

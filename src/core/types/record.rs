@@ -1,4 +1,6 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
+
+use crate::core::types::resolve;
 
 use super::{Symbol, Value};
 
@@ -100,5 +102,21 @@ impl std::ops::Deref for Record {
 
     fn deref(&self) -> &Self::Target {
         &self.values
+    }
+}
+
+impl Display for Record {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = String::new();
+
+        let mut keys = self.values.keys().cloned().collect::<Vec<_>>();
+        keys.sort_by(|a, b| resolve(*a).cmp(resolve(*b)));
+
+        for key in keys {
+            let value = self.values.get(&key).unwrap();
+            s.push_str(&format!("{}: {}, ", resolve(key), value));
+        }
+
+        write!(f, "Record: [{}]", s)
     }
 }

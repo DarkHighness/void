@@ -1,67 +1,49 @@
-use spin::Mutex;
-
+use lasso::{Spur, ThreadedRodeo};
 use serde::{Deserialize, Serialize, Serializer};
-use string_interner::{DefaultBackend, DefaultSymbol, StringInterner};
 
-pub struct Interner(Mutex<string_interner::StringInterner<DefaultBackend>>);
+pub struct Interner(ThreadedRodeo<Spur>);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Symbol {
-    inner: string_interner::DefaultSymbol,
-    empty: bool,
-}
-
-impl Symbol {
-    pub fn is_empty(&self) -> bool {
-        return self.empty;
-    }
+    inner: lasso::Spur,
 }
 
 impl Interner {
     fn new() -> Self {
-        Self(Mutex::new(StringInterner::new()))
-    }
-
-    fn raw_get(&self, sym: DefaultSymbol) -> Option<String> {
-        let interner = self.0.lock();
-        interner.resolve(sym).map(|s| s.to_string())
-    }
-
-    pub fn get<T>(&self, s: T) -> Option<Symbol>
-    where
-        T: AsRef<str>,
-    {
-        let interner = self.0.lock();
-        interner.get(s).map(|symbol| Symbol::from(symbol))
+        Self(ThreadedRodeo::new())
     }
 
     pub fn get_or_intern<T>(&self, s: T) -> Symbol
     where
         T: AsRef<str>,
     {
-        let mut interner = self.0.lock();
-        let symbol = interner.get_or_intern(s);
+        let symbol = self.0.get_or_intern(s);
         symbol.into()
     }
 
-    pub fn resolve(&self, symbol: Symbol) -> Option<String> {
-        let interner = self.0.lock();
-        interner.resolve(symbol.inner).map(|s| s.to_string())
+    pub fn resolve(&self, symbol: Symbol) -> &str {
+        self.0.resolve(&symbol.inner)
     }
 
     pub fn len(&self) -> usize {
-        let interner = self.0.lock();
-        interner.len()
+        self.0.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        let interner = self.0.lock();
-        interner.is_empty()
+        self.0.is_empty()
+    }
+
+    fn internal(&self) -> &ThreadedRodeo<Spur> {
+        &self.0
     }
 }
 
 pub static INTERNER: once_cell::sync::Lazy<Interner> =
     once_cell::sync::Lazy::new(|| Interner::new());
+
+pub fn resolve(symbol: Symbol) -> &'static str {
+    INTERNER.resolve(symbol)
+}
 
 pub fn intern<T>(s: T) -> Symbol
 where
@@ -70,33 +52,22 @@ where
     INTERNER.get_or_intern(s)
 }
 
-pub fn resolve(symbol: Symbol) -> Option<String> {
-    INTERNER.resolve(symbol)
-}
-
-pub fn get_symbol<T>(s: T) -> Option<Symbol>
-where
-    T: AsRef<str>,
-{
-    INTERNER.get(s)
+impl Symbol {
+    pub fn is_empty(&self) -> bool {
+        self.as_ref().is_empty()
+    }
 }
 
 impl std::fmt::Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let str = INTERNER.resolve(*self).unwrap_or_default();
+        let str = INTERNER.resolve(*self);
         write!(f, "{}", str)
     }
 }
 
-impl From<string_interner::DefaultSymbol> for Symbol {
-    fn from(symbol: string_interner::DefaultSymbol) -> Self {
-        let string = INTERNER.raw_get(symbol);
-        let empty = string.is_none() || string.unwrap().is_empty();
-
-        Self {
-            inner: symbol,
-            empty,
-        }
+impl From<lasso::Spur> for Symbol {
+    fn from(symbol: lasso::Spur) -> Self {
+        Self { inner: symbol }
     }
 }
 
@@ -112,12 +83,18 @@ impl From<String> for Symbol {
     }
 }
 
+impl AsRef<str> for Symbol {
+    fn as_ref(&self) -> &str {
+        INTERNER.resolve(*self)
+    }
+}
+
 impl Serialize for Symbol {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let str = INTERNER.resolve(*self).unwrap_or_default();
+        let str = INTERNER.resolve(*self);
         serializer.serialize_str(&str)
     }
 }

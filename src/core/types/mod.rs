@@ -7,5 +7,5 @@ mod value;
 pub use error::{Error, Result};
 pub use r#type::DataType;
 pub use record::Record;
-pub use string::{get_symbol, intern, resolve, Symbol};
+pub use string::{intern, resolve, Symbol};
 pub use value::{parse_value, Value};

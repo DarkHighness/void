@@ -66,7 +66,7 @@ macro_rules! impl_serde_for_scoped_tag_id {
             where
                 S: serde::Serializer,
             {
-                let string = resolve(self.0.name).unwrap();
+                let string = resolve(self.0.name);
                 serializer.serialize_str(&string)
             }
         }
@@ -134,7 +134,7 @@ impl<'de> Deserialize<'de> for ScopedTagId {
 
         let scope = parts[0].to_lowercase();
         let scope_str = scope.as_str();
-        let name: Symbol = parts[1].into();
+        let name: &str = parts[1];
         if scope.is_empty() || name.is_empty() {
             return Err(serde::de::Error::custom("Invalid ScopedTagId format"));
         }
@@ -147,7 +147,10 @@ impl<'de> Deserialize<'de> for ScopedTagId {
             _ => return Err(serde::de::Error::custom("Invalid ScopedTagId scope")),
         };
 
-        Ok(Self(TagId { scope, name }))
+        Ok(Self(TagId {
+            scope,
+            name: name.into(),
+        }))
     }
 }
 

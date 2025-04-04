@@ -87,6 +87,10 @@ impl TimeseriesPipe {
             return Err(super::Error::InvalidRecord("No values found".into()));
         }
 
+        for record in &transformed_records {
+            info!("TimeSeries: {}", record);
+        }
+
         Ok(transformed_records)
     }
 }

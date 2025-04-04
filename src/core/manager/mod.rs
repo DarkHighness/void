@@ -12,6 +12,7 @@ use crate::{
         inbound::{self, Inbound},
         pipe::{self},
     },
+    timeit,
 };
 use log::{error, info};
 
@@ -29,37 +30,42 @@ pub struct Manager {
 }
 
 pub fn try_create_from_config(cfg: Config) -> Result<Manager> {
-    info!("Creating manager from config");
+    info!("Creating manager from config...");
 
-    let channel_graph = ChannelGraph::try_create_from(&cfg.pipes, &cfg.inbounds, &cfg.outbounds)?;
+    let channel_graph = timeit! { "Creating channel graph", {
+            ChannelGraph::try_create_from(&cfg.pipes, &cfg.inbounds, &cfg.outbounds)?
+    }};
 
-    let protocols = cfg
-        .protocols
-        .into_iter()
-        .map(|p| (p.tag(), p))
-        .collect::<HashMap<_, _>>();
+    let inbounds = timeit! { "Creating inbounds", {
+        let protocols = cfg
+            .protocols
+            .into_iter()
+            .map(|p| (p.tag(), p))
+            .collect::<HashMap<_, _>>();
 
-    let inbounds = cfg
-        .inbounds
-        .into_iter()
-        .map(|cfg| {
-            let protocol_id = cfg.protocol();
-            let protocol_cfg = protocols
-                .get(&protocol_id)
-                .cloned()
-                .ok_or_else(|| Error::ProtocolNotFound(protocol_id))?;
-            inbound::try_create_from(cfg, protocol_cfg, &channel_graph).map_err(error::Error::from)
-        })
-        .collect::<Result<Vec<_>>>()?;
+        cfg.inbounds
+            .into_iter()
+            .map(|cfg| {
+                let protocol_id = cfg.protocol();
+                let protocol_cfg = protocols
+                    .get(&protocol_id)
+                    .cloned()
+                    .ok_or_else(|| Error::ProtocolNotFound(protocol_id))?;
+                    inbound::try_create_from(cfg, protocol_cfg, &channel_graph).map_err(error::Error::from)
+            })
+            .collect::<Result<Vec<_>>>()?
+        }
+    };
 
-    let pipes = cfg
-        .pipes
-        .into_iter()
-        .map(|cfg| {
-            let pipe = pipe::try_create_from(cfg, &channel_graph)?;
-            Ok(pipe)
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let pipes = timeit! { "Creating pipes", {
+        cfg.pipes
+            .into_iter()
+            .map(|cfg| {
+                let pipe = pipe::try_create_from(cfg, &channel_graph)?;
+                Ok(pipe)
+            })
+            .collect::<Result<Vec<_>>>()?
+    }};
 
     let mgr = Manager {
         inbounds,
@@ -67,21 +73,21 @@ pub fn try_create_from_config(cfg: Config) -> Result<Manager> {
         channel_graph,
     };
 
-    let inbounds = ",".join(
-        &mgr.inbounds
-            .iter()
-            .map(|e| format!("{}", e.tag()))
-            .collect::<Vec<_>>(),
-    );
-    info!("Inbounds: [{}]", inbounds);
+    // let inbounds = ",".join(
+    //     &mgr.inbounds
+    //         .iter()
+    //         .map(|e| format!("{}", e.tag()))
+    //         .collect::<Vec<_>>(),
+    // );
+    // info!("Inbounds: [{}]", inbounds);
 
-    let pipes = ",".join(
-        &mgr.pipes
-            .iter()
-            .map(|e| format!("{}", e.tag()))
-            .collect::<Vec<_>>(),
-    );
-    info!("Pipes: [{}]", pipes);
+    // let pipes = ",".join(
+    //     &mgr.pipes
+    //         .iter()
+    //         .map(|e| format!("{}", e.tag()))
+    //         .collect::<Vec<_>>(),
+    // );
+    // info!("Pipes: [{}]", pipes);
 
     Ok(mgr)
 }
