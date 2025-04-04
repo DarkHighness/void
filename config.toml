@@ -8,13 +8,14 @@ protocol = "input"
 [[outbounds]]
 type = "prometheus"
 tag = "prometheus"
-address = "env:PROMETHEUS_ADDRESS"
+address = "PROMETHEUS_ADDRESS"
 
 [[protocols]]
 tag = "input"
 type = "csv"
+has_header = true
 fields = [
   { name = "id", type = "int" },
   { name = "timestamp", type = "datetime" },
-  { name = "temperature.gpu", type = "float"}
+  { name = "utilization.gpu", type = "float"}
 ]

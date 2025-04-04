@@ -9,7 +9,7 @@ pub enum Error {
     DuplicateTags(Vec<TagId>),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("Invalid config")]
+    #[error("Invalid config: {0}")]
     InvalidConfig(String),
     #[error("Invalid config file format: {0}")]
     InvalidConfigFileFormat(String),

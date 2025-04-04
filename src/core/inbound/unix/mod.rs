@@ -13,7 +13,11 @@ use crate::{
         inbound::{unix::UnixSocketConfig, ScanMode},
         ProtocolConfig,
     },
-    core::tag::{HasTag, InboundTagId, TagId},
+    core::{
+        protocol::Protocol,
+        tag::{HasTag, InboundTagId, TagId},
+        types::Record,
+    },
 };
 
 use super::base::Inbound;
@@ -21,17 +25,16 @@ use super::error::Result;
 
 pub(crate) struct UnixSocketInbound {
     tag: InboundTagId,
-
     path: PathBuf,
-    mode: ScanMode,
 
     listener: UnixListener,
-
-    connection_handles: Vec<JoinHandle<()>>,
-
     ctx: CancellationToken,
-    tx: mpsc::Sender<String>,
-    rx: mpsc::Receiver<String>,
+
+    tx: mpsc::Sender<Record>,
+    rx: mpsc::Receiver<Record>,
+    handles: Vec<JoinHandle<()>>,
+
+    protocol: ProtocolConfig,
 }
 
 impl UnixSocketInbound {
@@ -47,17 +50,18 @@ impl UnixSocketInbound {
         }
 
         let socket = UnixListener::bind(&path)?;
-        let (tx, rx) = mpsc::channel(1024);
+
+        let (tx, rx) = mpsc::channel(64);
 
         let inbound = UnixSocketInbound {
             tag: cfg.tag,
-            mode: cfg.mode,
             path,
             listener: socket,
-            connection_handles: Vec::new(),
             ctx: CancellationToken::new(),
             tx,
             rx,
+            handles: Vec::new(),
+            protocol: protocol_cfg,
         };
 
         info!(
@@ -101,18 +105,19 @@ impl Inbound for UnixSocketInbound {
             }
             Ok((stream, addr)) = new_connection => {
                 info!("inbound \"{}\" accept new connection \"{:?}\" ", self.tag, addr);
-                let handle = UnixConnection::spawn(
+                let conn = UnixConnection::try_create_from(
                     stream,
-                    addr,
-                    self.mode,
+                    self.protocol.clone(),
                     self.tx.clone(),
                     self.ctx.clone(),
-                );
-                self.connection_handles.push(handle);
+                )?;
+                let handle = conn.spawn();
+                self.handles.push(handle);
+                info!("inbound \"{}\" spawn new reader \"{:?}\" ", self.tag, addr);
             }
             data = self.rx.recv() => match data {
                 Some(data) => {
-                    info!("{}", self.tag)
+                    info!("{} {:?}", self.tag, data)
                 }
                 None => return Ok(()),
             }

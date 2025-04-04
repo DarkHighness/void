@@ -1,3 +1,4 @@
+use log::error;
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader},
     net::{unix::SocketAddr, UnixStream},
@@ -5,85 +6,59 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::config::inbound::ScanMode;
+use crate::{
+    config::{inbound::ScanMode, ProtocolConfig},
+    core::{
+        protocol::{self, Protocol},
+        types::Record,
+    },
+};
 pub struct UnixConnection {
-    reader: tokio::sync::Mutex<BufReader<UnixStream>>,
+    protocol: Box<dyn Protocol>,
+    tx: mpsc::Sender<Record>,
 
-    addr: SocketAddr,
-    mode: ScanMode,
-
-    tx: mpsc::Sender<String>,
     ctx: CancellationToken,
 }
 
 impl UnixConnection {
-    fn new(
+    pub fn try_create_from(
         stream: UnixStream,
-        addr: SocketAddr,
-        mode: ScanMode,
-        tx: mpsc::Sender<String>,
+        protocol_cfg: ProtocolConfig,
+        tx: mpsc::Sender<Record>,
         ctx: CancellationToken,
-    ) -> Self {
-        UnixConnection {
-            reader: tokio::sync::Mutex::new(BufReader::new(stream)),
-            addr,
-            mode,
-            tx,
-            ctx,
-        }
+    ) -> super::Result<Self> {
+        let protocol = protocol::try_create_from(stream, protocol_cfg)?;
+
+        Ok(UnixConnection { protocol, tx, ctx })
     }
 
-    async fn read_next(&self, buf: &mut String) -> std::io::Result<usize> {
-        let mut reader = self.reader.lock().await;
-
-        match self.mode {
-            ScanMode::Line => reader.read_line(buf).await,
-            ScanMode::Full => reader.read_to_string(buf).await,
-        }
-    }
-
-    pub fn spawn(
-        stream: UnixStream,
-        addr: SocketAddr,
-        mode: ScanMode,
-        tx: mpsc::Sender<String>,
-        ctx: CancellationToken,
-    ) -> tokio::task::JoinHandle<()> {
-        let conn = UnixConnection::new(stream, addr, mode, tx, ctx);
+    pub fn spawn(mut self) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             loop {
-                let mut buf = String::new();
-                let next = conn.read_next(&mut buf);
-                let cancelled = conn.ctx.cancelled();
+                let next_record = self.protocol.read_next();
+                let cancelled = self.ctx.cancelled();
 
-                tokio::select! {
+                let record = tokio::select! {
                     // UnixInbound has been dropped
-                    _ = cancelled => {
-                        break;
-                    }
-                    readed = next => {
-                        match readed {
-                            Ok(0) => {
-                                log::info!("Connection closed: {:?}", conn.addr);
-                                break;
+                    _ = cancelled => break,
+                    record = next_record => match record {
+                        Ok(record) => record,
+                        Err(err) => {
+                            if !err.is_eof() {
+                                error!("failed to read record: {}", err);
                             }
-                            Err(e) => {
-                                log::error!("Failed to read data: {:?} {}", conn.addr, e);
-                                break;
-                            }
-                            _ => {}
+
+                            break;
                         }
                     }
-                }
+                };
 
-                let cancelled = conn.ctx.cancelled();
+                let cancelled = self.ctx.cancelled();
 
                 tokio::select! {
                     // UnixInbound has been dropped
-                    _ = cancelled => {
-                        break;
-                    }
-                    error = conn.tx.send(buf) => if let Err(_) = error {
+                    _ = cancelled => break,
+                    error = self.tx.send(record) => if let Err(_) = error {
                         break;
                     }
                 }

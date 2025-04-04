@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::tag::{HasTag, TagId};
 
 use super::Verify;
+pub use super::{Error, Result};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -62,7 +63,7 @@ impl HasTag for InboundConfig {
 }
 
 impl Verify for InboundConfig {
-    fn verify(&mut self) -> super::error::Result<()> {
+    fn verify(&mut self) -> Result<()> {
         match self {
             InboundConfig::UnixSocket(cfg) => {
                 cfg.verify()?;

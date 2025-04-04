@@ -73,6 +73,10 @@ impl Verify for Config {
             inbound.verify()?;
         }
 
+        for protocol in &mut self.protocols {
+            protocol.verify()?;
+        }
+
         Ok(())
     }
 }

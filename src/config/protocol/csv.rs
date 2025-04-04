@@ -58,6 +58,23 @@ impl Display for CSVProtocolConfig {
 
 impl Verify for CSVProtocolConfig {
     fn verify(&mut self) -> crate::config::Result<()> {
+        // fill in the index if all are zero
+        let is_all_zero = self.fields.iter().all(|c| c.index == 0);
+        if is_all_zero {
+            self.fields.iter_mut().enumerate().for_each(|(i, col)| {
+                col.index = i;
+            });
+        } else {
+            // 检查是否有重复的 Index
+            let index_set = self.fields.iter().map(|c| c.index).collect::<HashSet<_>>();
+            if index_set.len() != self.fields.len() {
+                return Err(crate::config::Error::InvalidConfig(
+                    "CSV field index cannot be duplicated".to_string(),
+                ));
+            }
+        }
+
+        // fill in num_fields if it is zero
         if self.num_fields == 0 {
             let max_index = self.fields.iter().map(|e| e.index).max();
             match max_index {
@@ -71,30 +88,17 @@ impl Verify for CSVProtocolConfig {
         }
 
         if self.fields.len() > self.num_fields {
-            return Err(crate::config::Error::InvalidConfig(
-                "CSV field count cannot be greater than num_fields".to_string(),
-            ));
+            return Err(crate::config::Error::InvalidConfig(format!(
+                "CSV field count: {} cannot be greater than num_fields: {}",
+                self.fields.len(),
+                self.num_fields
+            )));
         }
 
         for field in &self.fields {
             if field.name.is_empty() {
                 return Err(crate::config::Error::InvalidConfig(
                     "CSV field name cannot be empty".to_string(),
-                ));
-            }
-        }
-
-        let is_all_zero = self.fields.iter().all(|c| c.index == 0);
-        if is_all_zero {
-            self.fields.iter_mut().enumerate().for_each(|(i, col)| {
-                col.index = i;
-            });
-        } else {
-            // 检查是否有重复的 Index
-            let index_set = self.fields.iter().map(|c| c.index).collect::<HashSet<_>>();
-            if index_set.len() != self.fields.len() {
-                return Err(crate::config::Error::InvalidConfig(
-                    "CSV field index cannot be duplicated".to_string(),
                 ));
             }
         }

@@ -12,3 +12,9 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl Error {
+    pub fn is_eof(&self) -> bool {
+        matches!(self, Error::EOF)
+    }
+}

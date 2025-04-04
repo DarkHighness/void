@@ -31,7 +31,7 @@ impl Display for UnixSocketConfig {
 }
 
 impl Verify for UnixSocketConfig {
-    fn verify(&mut self) -> crate::config::error::Result<()> {
+    fn verify(&mut self) -> super::Result<()> {
         Ok(())
     }
 }

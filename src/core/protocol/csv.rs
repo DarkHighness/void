@@ -14,7 +14,7 @@ pub struct CSVProtocol<R> {
     reader: R,
     csv_reader: csv_core::Reader,
 
-    has_headers: bool,
+    has_header: bool,
     header_skipped: bool,
 
     fields: HashMap<usize, (Arc<str>, DataType)>,
@@ -24,6 +24,8 @@ pub struct CSVProtocol<R> {
     output_buf: bytes::BytesMut,
     end_buf: Vec<usize>,
 }
+
+const BUFFER_SIZE: usize = 8192;
 
 impl<R> CSVProtocol<R>
 where
@@ -48,23 +50,32 @@ where
         Ok(Self {
             reader,
             csv_reader,
-            has_headers: cfg.has_header,
+            has_header: cfg.has_header,
             header_skipped: !cfg.has_header,
             num_fields: cfg.num_fields,
             fields,
-            input_buf: BytesMut::with_capacity(8192),
-            output_buf: BytesMut::with_capacity(8192),
+            input_buf: BytesMut::with_capacity(BUFFER_SIZE),
+            output_buf: BytesMut::zeroed(BUFFER_SIZE),
             // end_buf[0] will always be 0 to act as a sentinel
             // end_buf[1..] will be used to store the end positions of each field
-            end_buf: Vec::with_capacity(cfg.num_fields + 1),
+            end_buf: vec![0; cfg.num_fields + 1],
         })
     }
 
-    fn grow_buf(&mut self) {
-        let new_len = self.input_buf.len() * 2;
+    pub fn grow_input_buf(&mut self) {
+        self.input_buf.reserve(BUFFER_SIZE);
+    }
 
-        self.input_buf.resize(new_len, 0);
-        self.output_buf.resize(new_len, 0);
+    pub fn grow_output_buf(&mut self) {
+        self.output_buf.reserve(BUFFER_SIZE);
+        unsafe {
+            // Make the csv-core happy since they use is_empty to determine if the buffer is empty
+            self.output_buf.set_len(self.output_buf.capacity());
+        }
+    }
+
+    pub fn reset_end_buf(&mut self) {
+        // Do nothing
     }
 }
 
@@ -85,20 +96,22 @@ where
         }
 
         loop {
-            let mut remaining_input_buf = self.input_buf.split();
-            let readed = self.reader.read_buf(&mut remaining_input_buf).await?;
+            let readed = self.reader.read_buf(&mut self.input_buf).await?;
             if readed == 0 {
                 return Err(super::Error::EOF);
             }
 
             let (state, input_pos, output_pos, end_pos) = self.csv_reader.read_record(
-                &self.input_buf,
-                &mut self.output_buf,
+                &self.input_buf[..self.input_buf.len()],
+                &mut self.output_buf[..],
                 &mut self.end_buf[1..],
             );
 
             match state {
-                ReadRecordResult::InputEmpty => continue,
+                ReadRecordResult::InputEmpty => {
+                    self.grow_input_buf();
+                    continue;
+                }
                 ReadRecordResult::OutputEndsFull => {
                     return Err(super::Error::MismatchedFormat(
                         "The number of readed fields is greater than it defined in the config"
@@ -106,7 +119,7 @@ where
                     ))
                 }
                 ReadRecordResult::OutputFull => {
-                    self.grow_buf();
+                    self.grow_output_buf();
                     continue;
                 }
                 ReadRecordResult::End => unreachable!(),
@@ -139,11 +152,9 @@ where
                         })
                         .collect::<Result<Record, super::Error>>()?;
 
-                    // Remove the used bytes from the input buffer
-                    self.output_buf.clear();
-                    self.end_buf.clear();
-                    self.input_buf.advance(input_pos);
-                    assert!(self.input_buf.try_reclaim(input_pos));
+                    self.reset_end_buf();
+                    let next_input_buf = self.input_buf.split_off(input_pos);
+                    self.input_buf = next_input_buf;
 
                     return Ok(record);
                 }
