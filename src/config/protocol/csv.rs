@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     config::Verify,
     core::{
-        tag::{ProtocolTagId, TagId},
+        tag::ProtocolTagId,
         types::{DataType, Symbol},
     },
 };

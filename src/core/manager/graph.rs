@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use log::{debug, info};
+use log::info;
 use petgraph::{csr::DefaultIx, graph::NodeIndex, Direction, Graph};
 use tokio::sync::broadcast;
 

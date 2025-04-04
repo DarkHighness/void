@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::Verify,
-    core::tag::{InboundTagId, ProtocolTagId, ScopedTagId, TagId},
+    core::tag::{InboundTagId, ProtocolTagId},
 };
 
 #[derive(Debug, Serialize, Deserialize)]

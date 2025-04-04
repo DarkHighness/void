@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::tag::{HasTag, TagId};
 
 use super::Verify;
-pub use super::{Error, Result};
+pub use super::Result;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]

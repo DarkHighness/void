@@ -10,7 +10,7 @@ If no environment variable or file is found, the default value will be used.
 
 use std::str::FromStr;
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy)]
 enum EnvStringType {

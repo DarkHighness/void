@@ -3,7 +3,6 @@ mod graph;
 
 use std::collections::HashMap;
 
-use string_join::Join;
 use tokio_util::sync::CancellationToken;
 
 use crate::{

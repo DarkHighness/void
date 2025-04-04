@@ -4,7 +4,7 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::{protocol::ProtocolParser, tag::HasTag};
+use crate::core::tag::HasTag;
 
 use super::Verify;
 
