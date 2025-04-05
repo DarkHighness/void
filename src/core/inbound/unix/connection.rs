@@ -1,7 +1,7 @@
 use log::{error, info, warn};
 use tokio::{
     net::{unix::SocketAddr, UnixStream},
-    sync::{broadcast, mpsc},
+    sync::broadcast,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -44,7 +44,9 @@ impl UnixConnection {
     }
 
     pub fn spawn(mut self) -> tokio::task::JoinHandle<()> {
-        tokio::spawn(async move {
+        let name = format!("{}{:?}", self.tag, self.remote_addr);
+
+        tokio::task::Builder::new().name(&name).spawn(async move {
             loop {
                 let next_record = self.parser.read_next();
                 let cancelled = self.ctx.cancelled();
@@ -52,9 +54,7 @@ impl UnixConnection {
                     // UnixInbound has been dropped
                     _ = cancelled => break,
                     record = next_record => match record {
-                        Ok(record) => {
-                            record
-                        },
+                        Ok(record) => record,
                         Err(err) => match err.is_eof(){
                             true => {
                                 warn!("unix connection of {}({:?}) has been closed", self.tag, self.remote_addr);
@@ -69,12 +69,7 @@ impl UnixConnection {
                 };
 
                 match self.sender.send(record) {
-                    Ok(n) => {
-                        info!(
-                            "unix connection of {}({:?}) send a record to {} receivers",
-                            self.tag, self.remote_addr, n
-                        );
-                    }
+                    Ok(_) => (),
                     Err(_) => {
                         warn!(
                             "unix connection of {}({:?}) send a record failed, channel closed",
@@ -84,6 +79,6 @@ impl UnixConnection {
                     }
                 }
             }
-        })
+        }).expect("Failed to spawn unix connection")
     }
 }

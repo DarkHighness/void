@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
-use std::{collections::HashSet, fmt::Display};
+use std::collections::HashSet;
 
 use super::types::{resolve, Symbol};
 

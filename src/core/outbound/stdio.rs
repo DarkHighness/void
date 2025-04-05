@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use futures::stream::{FuturesUnordered, StreamExt};
-use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -9,7 +8,6 @@ use crate::{
         actor::Actor,
         manager::{ChannelGraph, TaggedReceiver},
         tag::{HasTag, TagId},
-        types::Record,
     },
 };
 

@@ -1,14 +1,10 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
-use dashmap::DashSet;
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::{info, warn};
 use once_cell::sync::Lazy;
-use tokio::sync::{
-    broadcast::{self, error::RecvError},
-    mpsc,
-};
+use tokio::sync::broadcast::error::RecvError;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -131,36 +127,40 @@ impl HasTag for TimeseriesPipe {
 impl Actor for TimeseriesPipe {
     type Error = super::Error;
     async fn poll(&mut self, ctx: CancellationToken) -> super::Result<()> {
-        let mut futs = self
+        let inbounds = self
             .inbounds
             .iter_mut()
             .map(|rx| Box::pin(rx.recv()))
             .collect::<Vec<_>>();
 
-        loop {
-            let (remaining, record) = tokio::select! {
-                _ = ctx.cancelled() => return Ok(()),
-                (record, _, remaining) = futures::future::select_all(futs.into_iter()) => {
-                    match record {
-                        Ok(record) => match remaining.len() {
-                            0 => (None, record),
-                            _ => (Some(remaining), record)
-                        },
-                        Err(e) => {
-                            warn!("{}: error receiving record: {:?}", self.tag, e);
-                            return Ok(());
-                        }
-                    }
+        // Wait for any of the inbounds to receive a record.
+        let (record, index, _) = futures::future::select_all(inbounds).await;
+
+        info!("{:?}", record);
+
+        let record = match record {
+            Ok(record) => self.transform(record),
+            Err(e) => match e {
+                RecvError::Closed => {
+                    self.inbounds.remove(index);
+                    return Ok(());
                 }
-            };
+                RecvError::Lagged(n) => {
+                    warn!("{}: inbound lagged {}", self.tag, n);
+                    return Ok(());
+                }
+            },
+        };
 
-            info!("{}: received record: {:?}", self.tag, record);
-
-            match remaining {
-                Some(remaining) => futs = remaining,
-                None => break,
+        let record = match record {
+            Ok(record) => record,
+            Err(e) => {
+                warn!("{}: failed to transform record: {:?}", self.tag, e);
+                return Ok(());
             }
-        }
+        };
+
+        info!("{}: received record: {:?}", self.tag, record);
 
         Ok(())
     }

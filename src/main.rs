@@ -89,7 +89,7 @@ pub async fn main() -> miette::Result<()> {
     })
     .into_diagnostic()?;
 
-    let mut mgr = manager::try_create_from_config(config)?;
+    let mgr = manager::try_create_from_config(config)?;
     mgr.run(child_token).await?;
 
     info!("Application has exited");

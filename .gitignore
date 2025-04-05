@@ -6,3 +6,6 @@ target/
 
 # Log
 *.log
+
+# Dot files
+*.dot

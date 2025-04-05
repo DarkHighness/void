@@ -1,7 +1,7 @@
 use miette::Diagnostic;
 use thiserror::Error;
 
-use crate::core::types::{Record, Symbol};
+use crate::core::types::Symbol;
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum Error {

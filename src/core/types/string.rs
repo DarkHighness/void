@@ -36,11 +36,41 @@ impl Counter {
 
 pub struct Interner(ThreadedRodeo<Spur>);
 
-// 字符串可以有两种形式：已 intern 的符号或普通字符串
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug)]
 pub enum Symbol {
     Interned(lasso::Spur),
     String(String),
+}
+
+impl PartialEq for Symbol {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Symbol::Interned(spur1), Symbol::Interned(spur2)) => spur1 == spur2,
+            (Symbol::String(s1), Symbol::String(s2)) => s1 == s2,
+            (Symbol::Interned(spur), Symbol::String(s)) => {
+                let str = INTERNER.resolve(&Symbol::Interned(*spur));
+                str == s.as_str()
+            }
+            (Symbol::String(s), Symbol::Interned(spur)) => {
+                let str = INTERNER.resolve(&Symbol::Interned(*spur));
+                s.as_str() == str
+            }
+        }
+    }
+}
+
+impl Eq for Symbol {}
+
+impl std::hash::Hash for Symbol {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Symbol::Interned(spur) => {
+                let str = INTERNER.resolve(&Symbol::Interned(*spur));
+                str.hash(state);
+            }
+            Symbol::String(s) => s.hash(state),
+        }
+    }
 }
 
 static INTERNER_COUNTER: Lazy<Counter> = Lazy::new(|| Counter::new());

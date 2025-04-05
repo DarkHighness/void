@@ -4,10 +4,9 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use connection::UnixConnection;
-use log::{error, info};
+use log::info;
 use tokio::{
     net::UnixListener,
-    sync::{broadcast, mpsc},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
@@ -18,7 +17,6 @@ use crate::{
         actor::Actor,
         manager::{ChannelGraph, TaggedSender},
         tag::{HasTag, TagId},
-        types::Record,
     },
 };
 
