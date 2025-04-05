@@ -1,7 +1,7 @@
-use log::{error, warn};
+use log::{error, info, warn};
 use tokio::{
     net::{unix::SocketAddr, UnixStream},
-    sync::mpsc,
+    sync::{broadcast, mpsc},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -9,32 +9,36 @@ use crate::{
     config::ProtocolConfig,
     core::{
         protocol::{self, ProtocolParser},
+        tag::TagId,
         types::Record,
     },
 };
 pub struct UnixConnection {
+    tag: TagId,
     remote_addr: SocketAddr,
 
     parser: Box<dyn ProtocolParser>,
-    tx: mpsc::Sender<Record>,
+    sender: broadcast::Sender<Record>,
 
     ctx: CancellationToken,
 }
 
 impl UnixConnection {
     pub fn try_create_from(
+        tag: TagId,
         stream: UnixStream,
         protocol_cfg: ProtocolConfig,
-        tx: mpsc::Sender<Record>,
+        tx: broadcast::Sender<Record>,
         ctx: CancellationToken,
     ) -> super::Result<Self> {
         let remote_addr = stream.peer_addr()?;
         let parser = protocol::try_create_parser_from(stream, protocol_cfg)?;
 
         Ok(UnixConnection {
+            tag,
             remote_addr,
             parser,
-            tx,
+            sender: tx,
             ctx,
         })
     }
@@ -48,24 +52,34 @@ impl UnixConnection {
                     // UnixInbound has been dropped
                     _ = cancelled => break,
                     record = next_record => match record {
-                        Ok(record) => record,
-                        Err(err) => {
-                            if err.is_eof() {
-                                warn!("UnixInbound connection {:?} has been closed", self.remote_addr);
-                            } else {
-                                error!("UnixInbound connection {:?} error: {}", self.remote_addr, err);
+                        Ok(record) => {
+                            record
+                        },
+                        Err(err) => match err.is_eof(){
+                            true => {
+                                warn!("unix connection of {}({:?}) has been closed", self.tag, self.remote_addr);
+                                break;
                             }
-                            break;
+                            false => {
+                                error!("unix connection of {}({:?}) encountered an error: {}", self.tag, self.remote_addr, err);
+                                continue;
+                            }
                         }
                     }
                 };
 
-                let cancelled = self.ctx.cancelled();
-
-                tokio::select! {
-                    // UnixInbound has been dropped
-                    _ = cancelled => break,
-                    error = self.tx.send(record) => if let Err(_) = error {
+                match self.sender.send(record) {
+                    Ok(n) => {
+                        info!(
+                            "unix connection of {}({:?}) send a record to {} receivers",
+                            self.tag, self.remote_addr, n
+                        );
+                    }
+                    Err(_) => {
+                        warn!(
+                            "unix connection of {}({:?}) send a record failed, channel closed",
+                            self.tag, self.remote_addr
+                        );
                         break;
                     }
                 }

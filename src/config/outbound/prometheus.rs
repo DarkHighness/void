@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{config::env::Env, core::tag::OutboundTagId};
+use crate::{
+    config::{env::Env, Verify},
+    core::tag::OutboundTagId,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PrometheusConfig {
@@ -13,9 +16,15 @@ pub struct PrometheusConfig {
     pub auth_token: Option<Env<String>>,
 }
 
-impl PrometheusConfig {
-    pub fn inbounds(&self) -> Vec<crate::core::tag::TagId> {
-        vec![]
+impl PrometheusConfig {}
+
+impl Verify for PrometheusConfig {
+    fn verify(&mut self) -> super::Result<()> {
+        if self.address.is_empty() {
+            return Err(super::Error::InvalidConfig("address is empty".into()));
+        }
+
+        Ok(())
     }
 }
 

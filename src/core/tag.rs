@@ -17,7 +17,7 @@ pub trait HasTag {
 
 impl std::fmt::Display for TagId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
+        write!(f, "{}:{}", self.scope, self.name)
     }
 }
 
@@ -84,18 +84,6 @@ macro_rules! impl_serde_for_scoped_tag_id {
             }
         }
 
-        impl Into<ScopedTagId> for $tag_id {
-            fn into(self) -> ScopedTagId {
-                ScopedTagId(self.0)
-            }
-        }
-
-        impl std::fmt::Display for $tag_id {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", self.0.name)
-            }
-        }
-
         impl AsRef<TagId> for $tag_id {
             fn as_ref(&self) -> &TagId {
                 &self.0
@@ -117,26 +105,17 @@ impl_serde_for_scoped_tag_id!(OutboundTagId, OUTBOUND_TAG_SCOPE);
 impl_serde_for_scoped_tag_id!(ProtocolTagId, PROTOCOL_TAG_SCOPE);
 impl_serde_for_scoped_tag_id!(PipeTagId, PIPE_TAG_SCOPE);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ScopedTagId(TagId);
-
-impl Display for ScopedTagId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.0.scope, self.0.name)
-    }
-}
-
-impl Serialize for ScopedTagId {
+impl Serialize for TagId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        let str = format!("{}:{}", self.0.scope, self.0.name);
+        let str = format!("{}:{}", self.scope, self.name);
         serializer.serialize_str(&str)
     }
 }
 
-impl<'de> Deserialize<'de> for ScopedTagId {
+impl<'de> Deserialize<'de> for TagId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -162,16 +141,43 @@ impl<'de> Deserialize<'de> for ScopedTagId {
             _ => return Err(serde::de::Error::custom("Invalid ScopedTagId scope")),
         };
 
-        Ok(Self(TagId {
+        Ok(TagId {
             scope,
             name: name.into(),
-        }))
+        })
     }
 }
 
-impl From<ScopedTagId> for TagId {
-    fn from(tag_id: ScopedTagId) -> Self {
-        tag_id.0
+impl TagId {
+    pub fn new(scope: &'static str, name: &str) -> Self {
+        Self {
+            scope,
+            name: name.into(),
+        }
+    }
+
+    pub fn scope(&self) -> &'static str {
+        self.scope
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    pub fn is_inbound(&self) -> bool {
+        self.scope == INBOUND_TAG_SCOPE
+    }
+
+    pub fn is_outbound(&self) -> bool {
+        self.scope == OUTBOUND_TAG_SCOPE
+    }
+
+    pub fn is_protocol(&self) -> bool {
+        self.scope == PROTOCOL_TAG_SCOPE
+    }
+
+    pub fn is_pipe(&self) -> bool {
+        self.scope == PIPE_TAG_SCOPE
     }
 }
 

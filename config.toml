@@ -1,7 +1,12 @@
 [[inbounds]]
 type = "unix_socket"
 path = "/tmp/mtproxy.sock"
-mode = "line"
+protocol = "csv"
+
+[[inbounds]]
+tag = "unix_socket2"
+type = "unix_socket"
+path = "/tmp/mtproxy2.sock"
 protocol = "csv"
 
 [[outbounds]]
@@ -10,7 +15,7 @@ inbounds = ["pipe:timeseries"]
 
 [[pipes]]
 type = "timeseries"
-data_inbounds = ["inbound:unix_socket"]
+inbounds = ["inbound:unix_socket", "inbound:unix_socket2"]
 values = ["utilization.gpu"]
 labels = ["id"]
 timestamp = "timestamp"

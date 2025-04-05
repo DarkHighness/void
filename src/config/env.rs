@@ -8,7 +8,7 @@ Format:
 If no environment variable or file is found, the default value will be used.
 */
 
-use std::str::FromStr;
+use std::{ops::Deref, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +44,14 @@ impl<T> Env<T> {
     }
 
     pub fn get(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T> Deref for Env<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
         &self.value
     }
 }

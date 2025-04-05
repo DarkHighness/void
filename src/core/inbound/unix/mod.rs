@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use connection::UnixConnection;
-use log::{debug, error, info};
+use log::{error, info};
 use tokio::{
     net::UnixListener,
     sync::{broadcast, mpsc},
@@ -16,7 +16,7 @@ use crate::{
     config::{inbound::unix::UnixSocketConfig, ProtocolConfig},
     core::{
         actor::Actor,
-        manager::ChannelGraph,
+        manager::{ChannelGraph, TaggedSender},
         tag::{HasTag, TagId},
         types::Record,
     },
@@ -25,7 +25,7 @@ use crate::{
 use super::base::Inbound;
 use super::error::Result;
 
-pub const UNIX_SOCKET_CONNECTION_BUFFER_SIZE: usize = 64;
+// pub const UNIX_SOCKET_CONNECTION_BUFFER_SIZE: usize = 64;
 
 pub(crate) struct UnixSocketInbound {
     tag: TagId,
@@ -34,11 +34,9 @@ pub(crate) struct UnixSocketInbound {
     listener: UnixListener,
     ctx: CancellationToken,
 
-    tx: mpsc::Sender<Record>,
-    rx: mpsc::Receiver<Record>,
     handles: Vec<JoinHandle<()>>,
 
-    outbound_channels: Vec<broadcast::Sender<Record>>,
+    outbound: TaggedSender,
     protocol: ProtocolConfig,
 }
 
@@ -46,7 +44,7 @@ impl UnixSocketInbound {
     pub fn try_create_from(
         cfg: UnixSocketConfig,
         protocol_cfg: ProtocolConfig,
-        channel_graph: &ChannelGraph,
+        channel_graph: &mut ChannelGraph,
     ) -> Result<Self> {
         let path = cfg.path;
 
@@ -61,18 +59,15 @@ impl UnixSocketInbound {
         let tag = cfg.tag.into();
 
         let socket = UnixListener::bind(&path)?;
-        let (tx, rx) = mpsc::channel(UNIX_SOCKET_CONNECTION_BUFFER_SIZE);
-        let outbound_channels = channel_graph.unsafe_inbound_outputs(&tag);
+        let outbound = channel_graph.sender(&tag);
 
         let inbound = UnixSocketInbound {
             tag,
             path,
             listener: socket,
             ctx: CancellationToken::new(),
-            tx,
-            rx,
             handles: Vec::new(),
-            outbound_channels,
+            outbound,
             protocol: protocol_cfg,
         };
 
@@ -115,21 +110,15 @@ impl Actor for UnixSocketInbound {
             Ok((stream, addr)) = new_connection => {
                 info!("inbound \"{}\" accept new connection \"{:?}\" ", self.tag, addr);
                 let conn = UnixConnection::try_create_from(
+                    self.tag.clone(),
                     stream,
                     self.protocol.clone(),
-                    self.tx.clone(),
+                    self.outbound.clone(),
                     self.ctx.clone(),
                 )?;
                 let handle = conn.spawn();
                 self.handles.push(handle);
                 info!("inbound \"{}\" spawn a new connection \"{:?}\" ", self.tag, addr);
-            }
-            record = self.rx.recv() => match record {
-                Some(record) => self.outbound_channels.iter().for_each(|tx| match tx.send(record.clone()){
-                    Ok(n) => debug!("inbound \"{}\" send record to outbound {} channel(s)", n, self.tag),
-                    Err(e) => error!("inbound \"{}\" send record to outbound channel error: {:?}", self.tag, e),
-                }),
-                None => return Ok(()),
             }
         }
 

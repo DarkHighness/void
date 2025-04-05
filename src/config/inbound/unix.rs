@@ -20,7 +20,7 @@ impl Display for UnixSocketConfig {
         write!(
             f,
             "UnixSocketConfig {{ tag: {}, path: {}}}",
-            self.tag,
+            self.tag.as_ref(),
             self.path.display(),
         )
     }

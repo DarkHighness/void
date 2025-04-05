@@ -1,16 +1,21 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use async_trait::async_trait;
+use dashmap::DashSet;
+use futures::{stream::FuturesUnordered, StreamExt};
 use log::{info, warn};
 use once_cell::sync::Lazy;
-use tokio::sync::broadcast;
+use tokio::sync::{
+    broadcast::{self, error::RecvError},
+    mpsc,
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::pipe::timeseries::TimeseriesPipeConfig,
     core::{
         actor::Actor,
-        manager::ChannelGraph,
+        manager::{ChannelGraph, TaggedReceiver, TaggedSender},
         tag::{HasTag, TagId},
         types::{Attribute, Record, Symbol, Value},
     },
@@ -26,8 +31,8 @@ pub struct TimeseriesPipe {
     timestamp_field: Option<Symbol>,
     extra_labels: HashMap<Symbol, String>,
 
-    rx: broadcast::Receiver<Record>,
-    tx: broadcast::Sender<Record>,
+    inbounds: Vec<TaggedReceiver>,
+    outbound: TaggedSender,
 }
 
 pub static RECORD_TYPE_TIMESERIES: Lazy<Symbol> = Lazy::new(|| Symbol::from("TimeseriesRecord"));
@@ -38,11 +43,15 @@ static RECORD_TYPE_TIMESERIES_VALUE: Lazy<Value> =
 impl TimeseriesPipe {
     pub fn try_create_from(
         cfg: TimeseriesPipeConfig,
-        channels: &ChannelGraph,
+        channels: &mut ChannelGraph,
     ) -> super::Result<Self> {
         let tag = cfg.tag.into();
-        let rx = channels.unsafe_pipe_inbound(&tag);
-        let tx = channels.unsafe_pipe_outbound(&tag);
+        let inbounds = cfg
+            .inbounds
+            .iter()
+            .map(|inbound| channels.recv_from(inbound, &tag))
+            .collect::<Vec<_>>();
+        let outbound = channels.sender(&tag);
 
         Ok(TimeseriesPipe {
             tag,
@@ -50,8 +59,8 @@ impl TimeseriesPipe {
             value_fields: cfg.values,
             timestamp_field: cfg.timestamp,
             extra_labels: cfg.extra_labels,
-            rx,
-            tx,
+            inbounds,
+            outbound,
         })
     }
 
@@ -122,16 +131,34 @@ impl HasTag for TimeseriesPipe {
 impl Actor for TimeseriesPipe {
     type Error = super::Error;
     async fn poll(&mut self, ctx: CancellationToken) -> super::Result<()> {
-        tokio::select! {
-            _ = ctx.cancelled() => {
-                return Ok(());
-            }
-            record = self.rx.recv() => {
-                let record = record?;
-                 self.transform(record)?.into_iter().map(|record| {
-                        self.tx.send(record)?;
-                        Ok::<(), super::Error>(())
-                    }).collect::<Result<Vec<_>, _>>()?;
+        let mut futs = self
+            .inbounds
+            .iter_mut()
+            .map(|rx| Box::pin(rx.recv()))
+            .collect::<Vec<_>>();
+
+        loop {
+            let (remaining, record) = tokio::select! {
+                _ = ctx.cancelled() => return Ok(()),
+                (record, _, remaining) = futures::future::select_all(futs.into_iter()) => {
+                    match record {
+                        Ok(record) => match remaining.len() {
+                            0 => (None, record),
+                            _ => (Some(remaining), record)
+                        },
+                        Err(e) => {
+                            warn!("{}: error receiving record: {:?}", self.tag, e);
+                            return Ok(());
+                        }
+                    }
+                }
+            };
+
+            info!("{}: received record: {:?}", self.tag, record);
+
+            match remaining {
+                Some(remaining) => futs = remaining,
+                None => break,
             }
         }
 

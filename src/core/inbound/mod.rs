@@ -12,7 +12,7 @@ use super::manager::ChannelGraph;
 pub fn try_create_from(
     inbound_config: InboundConfig,
     protocol_config: ProtocolConfig,
-    channel_graph: &ChannelGraph,
+    channel_graph: &mut ChannelGraph,
 ) -> Result<Box<dyn base::Inbound>> {
     let inbound = match inbound_config {
         InboundConfig::UnixSocket(cfg) => Box::new(unix::UnixSocketInbound::try_create_from(

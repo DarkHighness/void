@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::Verify,
-    core::tag::{OutboundTagId, ScopedTagId},
+    core::tag::{OutboundTagId, TagId},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -16,7 +16,7 @@ pub enum Io {
 pub struct StdioOutboundConfig {
     #[serde(default = "default_stdio_tag")]
     pub tag: OutboundTagId,
-    pub r#inbounds: Vec<ScopedTagId>,
+    pub r#inbounds: Vec<TagId>,
     #[serde(default = "default_io")]
     pub io: Io,
 }
@@ -31,11 +31,7 @@ impl Verify for StdioOutboundConfig {
     }
 }
 
-impl StdioOutboundConfig {
-    pub fn inbounds(&self) -> Vec<crate::core::tag::TagId> {
-        self.r#inbounds.iter().cloned().map(Into::into).collect()
-    }
-}
+impl StdioOutboundConfig {}
 
 fn default_stdio_tag() -> OutboundTagId {
     OutboundTagId::new("stdio")

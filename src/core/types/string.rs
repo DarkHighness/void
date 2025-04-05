@@ -37,7 +37,7 @@ impl Counter {
 pub struct Interner(ThreadedRodeo<Spur>);
 
 // 字符串可以有两种形式：已 intern 的符号或普通字符串
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Symbol {
     Interned(lasso::Spur),
     String(String),
@@ -102,6 +102,23 @@ impl Symbol {
         if let Symbol::String(s) = self {
             let spur = INTERNER.inner().get_or_intern(s);
             *self = Symbol::Interned(spur);
+        }
+    }
+}
+
+impl Clone for Symbol {
+    fn clone(&self) -> Self {
+        match self {
+            Symbol::Interned(spur) => Symbol::Interned(*spur),
+            Symbol::String(s) => {
+                let count = INTERNER_COUNTER.increment(&s);
+                if count >= INTERN_THRESHOLD {
+                    let spur = INTERNER.inner().get_or_intern(s);
+                    Symbol::Interned(spur)
+                } else {
+                    Symbol::String(s.clone())
+                }
+            }
         }
     }
 }

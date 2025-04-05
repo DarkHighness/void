@@ -96,8 +96,8 @@ where
                     parse_value(field_str, data_type)
                         .map_err(|_| {
                             super::Error::MismatchedFormat(format!(
-                                "Failed to parse field {}: {}",
-                                name, field_str
+                                "Failed to parse field {}: {}, expected {}",
+                                name, field_str, data_type
                             ))
                         })
                         .map(|v| (name.clone(), v))

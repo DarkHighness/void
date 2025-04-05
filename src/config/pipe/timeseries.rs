@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     config::Verify,
     core::{
-        tag::{PipeTagId, ScopedTagId, TagId},
+        tag::{PipeTagId, TagId},
         types::Symbol,
     },
 };
@@ -14,7 +14,7 @@ use crate::{
 pub struct TimeseriesPipeConfig {
     #[serde(default = "default_timeseries_tag")]
     pub tag: PipeTagId,
-    pub data_inbounds: Vec<ScopedTagId>,
+    pub inbounds: Vec<TagId>,
 
     #[serde(default)]
     pub labels: Vec<Symbol>,
@@ -30,8 +30,8 @@ pub struct TimeseriesPipeConfig {
 
 impl Verify for TimeseriesPipeConfig {
     fn verify(&mut self) -> super::Result<()> {
-        if self.data_inbounds.is_empty() {
-            return Err(super::Error::InvalidConfig("data_inbounds is empty".into()));
+        if self.inbounds.is_empty() {
+            return Err(super::Error::InvalidConfig("inbounds is empty".into()));
         }
 
         if self.values.is_empty() {
@@ -46,11 +46,7 @@ impl Verify for TimeseriesPipeConfig {
     }
 }
 
-impl TimeseriesPipeConfig {
-    pub fn inbounds(&self) -> Vec<TagId> {
-        self.data_inbounds.iter().cloned().map(Into::into).collect()
-    }
-}
+impl TimeseriesPipeConfig {}
 
 fn default_timeseries_tag() -> PipeTagId {
     PipeTagId::new("timeseries")

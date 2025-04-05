@@ -8,9 +8,9 @@ pub enum Error {
     #[error("Invalid record: {0}")]
     InvalidRecord(String),
     #[error("Failed to receive from channel: {0}")]
-    ChannelRecvError(#[from] tokio::sync::broadcast::error::RecvError),
+    ChannelRecvError(String),
     #[error("Failed to send to channel: {0}")]
-    ChannelSendError(#[from] tokio::sync::broadcast::error::SendError<Record>),
+    ChannelSendError(String),
     #[error("Field not found: {0}")]
     FieldNotFound(Symbol),
 }

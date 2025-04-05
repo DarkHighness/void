@@ -44,3 +44,4 @@ lasso = { version = "0.7.3", features = ["multi-threaded"]}
 
 # Graph
 petgraph = "0.7.1"
+console-subscriber = "0.4.1"

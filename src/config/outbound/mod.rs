@@ -18,12 +18,6 @@ pub enum OutboundConfig {
     Prometheus(prometheus::PrometheusConfig),
 }
 
-impl Verify for OutboundConfig {
-    fn verify(&mut self) -> super::Result<()> {
-        Ok(())
-    }
-}
-
 impl HasTag for OutboundConfig {
     fn tag(&self) -> &TagId {
         match self {
@@ -33,11 +27,13 @@ impl HasTag for OutboundConfig {
     }
 }
 
-impl OutboundConfig {
-    pub fn inbounds(&self) -> Vec<crate::core::tag::TagId> {
+impl OutboundConfig {}
+
+impl Verify for OutboundConfig {
+    fn verify(&mut self) -> super::Result<()> {
         match self {
-            OutboundConfig::Stdio(cfg) => cfg.inbounds(),
-            OutboundConfig::Prometheus(cfg) => cfg.inbounds(),
+            OutboundConfig::Stdio(cfg) => cfg.verify(),
+            OutboundConfig::Prometheus(cfg) => cfg.verify(),
         }
     }
 }

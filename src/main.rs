@@ -71,6 +71,8 @@ fn setup_logger() -> std::result::Result<(), fern::InitError> {
 
 #[tokio::main]
 pub async fn main() -> miette::Result<()> {
+    console_subscriber::init();
+
     setup_logger().into_diagnostic()?;
 
     info!("Starting the application");

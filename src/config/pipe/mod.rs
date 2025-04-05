@@ -31,10 +31,4 @@ impl HasTag for PipeConfig {
     }
 }
 
-impl PipeConfig {
-    pub fn inbounds(&self) -> Vec<TagId> {
-        match self {
-            PipeConfig::Timeseries(cfg) => cfg.inbounds(),
-        }
-    }
-}
+impl PipeConfig {}
