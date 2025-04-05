@@ -6,6 +6,6 @@ mod value;
 
 pub use error::{Error, Result};
 pub use r#type::DataType;
-pub use record::Record;
+pub use record::{Attribute, Record};
 pub use string::{resolve, Symbol};
 pub use value::{parse_value, Value};

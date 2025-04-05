@@ -66,8 +66,8 @@ macro_rules! impl_serde_for_scoped_tag_id {
             where
                 S: serde::Serializer,
             {
-                let string = resolve(self.0.name);
-                serializer.serialize_str(&string)
+                let name = resolve(&self.0.name);
+                serializer.serialize_str(&name)
             }
         }
 

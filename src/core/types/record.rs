@@ -5,7 +5,9 @@ use crate::core::types::resolve;
 use super::{Symbol, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Attribute {}
+pub enum Attribute {
+    Type,
+}
 
 #[derive(Debug, Clone)]
 pub struct Record {
@@ -110,11 +112,11 @@ impl Display for Record {
         let mut s = String::new();
 
         let mut keys = self.values.keys().cloned().collect::<Vec<_>>();
-        keys.sort_by(|a, b| resolve(*a).cmp(resolve(*b)));
+        keys.sort_by(|a, b| resolve(a).cmp(&resolve(b)));
 
         for key in keys {
             let value = self.values.get(&key).unwrap();
-            s.push_str(&format!("{}: {}, ", resolve(key), value));
+            s.push_str(&format!("{}: {}, ", resolve(&key), value));
         }
 
         write!(f, "Record: [{}]", s)

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use log::{info, warn};
+use once_cell::sync::Lazy;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
@@ -10,7 +11,7 @@ use crate::{
     core::{
         manager::ChannelGraph,
         tag::{HasTag, TagId},
-        types::{Record, Symbol, Value},
+        types::{Attribute, Record, Symbol, Value},
     },
 };
 
@@ -25,6 +26,11 @@ pub struct TimeseriesPipe {
     rx: broadcast::Receiver<Record>,
     tx: broadcast::Sender<Record>,
 }
+
+pub static RECORD_TYPE_TIMESERIES: Lazy<Symbol> = Lazy::new(|| Symbol::from("TimeseriesRecord"));
+
+static RECORD_TYPE_TIMESERIES_VALUE: Lazy<Value> =
+    Lazy::new(|| Value::from(RECORD_TYPE_TIMESERIES.as_ref()));
 
 impl TimeseriesPipe {
     pub fn try_create_from(
@@ -69,6 +75,11 @@ impl TimeseriesPipe {
             .into_iter()
             .partition::<Vec<_>, _>(|(sym, _)| self.value_fields.contains(sym));
 
+        if values.is_empty() {
+            warn!("{}: no values found in record", self.tag);
+            return Err(super::Error::InvalidRecord("No values found".into()));
+        }
+
         let mut transformed_records = Vec::new();
         for (name, value) in values {
             let mut new_record = Record::empty();
@@ -79,6 +90,7 @@ impl TimeseriesPipe {
             for (key, value) in &self.extra_labels {
                 new_record.set(key.clone(), value.clone().into());
             }
+            new_record.set_attribute(Attribute::Type, RECORD_TYPE_TIMESERIES_VALUE.clone());
             transformed_records.push(new_record);
         }
 
