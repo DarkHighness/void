@@ -24,9 +24,9 @@ impl Verify for PipeConfig {
 }
 
 impl HasTag for PipeConfig {
-    fn tag(&self) -> crate::core::tag::TagId {
+    fn tag(&self) -> &TagId {
         match self {
-            PipeConfig::Timeseries(cfg) => From::from(&cfg.tag),
+            PipeConfig::Timeseries(cfg) => &cfg.tag,
         }
     }
 }

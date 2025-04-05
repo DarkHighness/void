@@ -65,55 +65,51 @@ impl Config {
     }
 }
 
+macro_rules! check_empty {
+    ($self:ident, $field:ident, $msg:expr) => {
+        if $self.$field.is_empty() {
+            return Err(Error::InvalidConfig($msg.into()));
+        }
+    };
+}
+
+macro_rules! check_duplicates {
+    ($self:ident, $field:ident) => {
+        if let Some(duplicates) = find_duplicate_tags(&$self.$field) {
+            return Err(Error::DuplicateTags(
+                duplicates.into_iter().cloned().collect(),
+            ));
+        }
+    };
+}
+
+macro_rules! verify_all {
+    ($self:ident, $field:ident) => {
+        for item in &mut $self.$field {
+            item.verify()?;
+        }
+    };
+}
+
 impl Verify for Config {
     fn verify(&mut self) -> error::Result<()> {
-        if self.inbounds.is_empty() {
-            return Err(Error::InvalidConfig("inbounds is empty".into()));
-        }
+        // 检查是否为空
+        check_empty!(self, inbounds, "inbounds is empty");
+        check_empty!(self, outbounds, "outbounds is empty");
+        check_empty!(self, protocols, "protocols is empty");
+        check_empty!(self, pipes, "pipes is empty");
 
-        if self.outbounds.is_empty() {
-            return Err(Error::InvalidConfig("outbounds is empty".into()));
-        }
+        // 检查重复标签
+        check_duplicates!(self, inbounds);
+        check_duplicates!(self, outbounds);
+        check_duplicates!(self, protocols);
+        check_duplicates!(self, pipes);
 
-        if self.protocols.is_empty() {
-            return Err(Error::InvalidConfig("protocols is empty".into()));
-        }
-
-        if self.pipes.is_empty() {
-            return Err(Error::InvalidConfig("pipes is empty".into()));
-        }
-
-        if let Some(duplicates) = find_duplicate_tags(&self.inbounds) {
-            return Err(Error::DuplicateTags(duplicates));
-        }
-
-        if let Some(duplicates) = find_duplicate_tags(&self.outbounds) {
-            return Err(Error::DuplicateTags(duplicates));
-        }
-
-        if let Some(duplicates) = find_duplicate_tags(&self.protocols) {
-            return Err(Error::DuplicateTags(duplicates));
-        }
-
-        if let Some(duplicates) = find_duplicate_tags(&self.pipes) {
-            return Err(Error::DuplicateTags(duplicates));
-        }
-
-        for inbound in &mut self.inbounds {
-            inbound.verify()?;
-        }
-
-        for protocol in &mut self.protocols {
-            protocol.verify()?;
-        }
-
-        for pipe in &mut self.pipes {
-            pipe.verify()?;
-        }
-
-        for outbound in &mut self.outbounds {
-            outbound.verify()?;
-        }
+        // 验证所有项
+        verify_all!(self, inbounds);
+        verify_all!(self, protocols);
+        verify_all!(self, pipes);
+        verify_all!(self, outbounds);
 
         Ok(())
     }

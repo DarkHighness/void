@@ -20,20 +20,26 @@ fn setup_logger() -> std::result::Result<(), fern::InitError> {
 
     let make_formatter = |use_color: bool| {
         move |out: fern::FormatCallback, message: &Arguments, record: &log::Record| {
+            let now = jiff::Zoned::now();
+            let now = now.strftime("%Y-%m-%d %H:%M:%S");
+
+            let target = record.target();
+            let target = target.replacen("void", "app", 1);
+
             if use_color {
                 out.finish(format_args!(
                     "[{} {} {}] {}",
-                    jiff::Zoned::now(),
+                    now,
                     colors.color(record.level()),
-                    record.target(),
+                    target,
                     message
                 ))
             } else {
                 out.finish(format_args!(
                     "[{} {} {}] {}",
-                    jiff::Zoned::now(),
+                    now,
                     record.level(),
-                    record.target(),
+                    target,
                     message
                 ))
             }

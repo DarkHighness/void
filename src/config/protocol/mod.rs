@@ -4,7 +4,7 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::tag::HasTag;
+use crate::core::tag::{HasTag, TagId};
 
 use super::Verify;
 
@@ -33,9 +33,9 @@ impl Verify for ProtocolConfig {
 }
 
 impl HasTag for ProtocolConfig {
-    fn tag(&self) -> crate::core::tag::TagId {
+    fn tag(&self) -> &TagId {
         match self {
-            ProtocolConfig::CSV(config) => From::from(&config.tag),
+            ProtocolConfig::CSV(config) => &config.tag,
         }
     }
 }

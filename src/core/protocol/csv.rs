@@ -10,6 +10,8 @@ use crate::{
     core::types::{parse_value, DataType, Record, Symbol},
 };
 
+const BUFFER_SIZE: usize = 8192;
+
 pub struct CSVProtocol<R> {
     reader: R,
     csv_reader: csv_core::Reader,
@@ -20,12 +22,10 @@ pub struct CSVProtocol<R> {
     fields: HashMap<usize, (Symbol, DataType)>,
     num_fields: usize,
 
-    input_buf: bytes::BytesMut,
-    output_buf: bytes::BytesMut,
+    input_buf: BytesMut,
+    output_buf: BytesMut,
     end_buf: Vec<usize>,
 }
-
-const BUFFER_SIZE: usize = 8192;
 
 impl<R> CSVProtocol<R>
 where
@@ -35,11 +35,7 @@ where
         let fields = cfg
             .fields
             .into_iter()
-            .map(|c| {
-                let r#type = c.r#type;
-                let index = c.index;
-                (index, (c.name, r#type))
-            })
+            .map(|c| (c.index, (c.name, c.r#type)))
             .collect::<HashMap<usize, _>>();
 
         let csv_reader = csv_core::ReaderBuilder::new()
@@ -55,26 +51,59 @@ where
             fields,
             input_buf: BytesMut::with_capacity(BUFFER_SIZE),
             output_buf: BytesMut::zeroed(BUFFER_SIZE),
-            // end_buf[0] will always be 0 to act as a sentinel
-            // end_buf[1..] will be used to store the end positions of each field
+            // end_buf[0] is a sentinel
+            // end_buf[1..] is the end positions of each field
             end_buf: vec![0; cfg.num_fields + 1],
         })
     }
 
-    pub fn grow_input_buf(&mut self) {
+    async fn skip_header(&mut self) -> super::Result<()> {
+        if self.has_header && !self.header_skipped {
+            loop {
+                let c = self.reader.read_u8().await?;
+                if c == b'\n' {
+                    self.header_skipped = true;
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn ensure_input_capacity(&mut self) {
         self.input_buf.reserve(BUFFER_SIZE);
     }
 
-    pub fn grow_output_buf(&mut self) {
+    fn ensure_output_capacity(&mut self) {
         self.output_buf.reserve(BUFFER_SIZE);
         unsafe {
-            // Make the csv-core happy since they use is_empty to determine if the buffer is empty
+            // make csv-core happy since they use is_empty to check if the buffer is empty
             self.output_buf.set_len(self.output_buf.capacity());
         }
     }
 
-    pub fn reset_end_buf(&mut self) {
-        // Do nothing
+    fn parse_record(&self, ends: &[usize], end_pos: usize) -> super::Result<Record> {
+        ends[0..end_pos + 1]
+            .windows(2)
+            .enumerate()
+            .filter_map(|(i, range)| {
+                self.fields.get(&i).map(|(name, data_type)| {
+                    let start = range[0];
+                    let end = range[1];
+                    let field = &self.output_buf[start..end];
+                    let field_str = unsafe { std::str::from_utf8_unchecked(field).trim() };
+
+                    parse_value(field_str, data_type)
+                        .map_err(|_| {
+                            super::Error::MismatchedFormat(format!(
+                                "Failed to parse field {}: {}",
+                                name, field_str
+                            ))
+                        })
+                        .map(|v| (name.clone(), v))
+                })
+            })
+            .collect::<Result<Record, super::Error>>()
     }
 }
 
@@ -84,79 +113,41 @@ where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
     async fn read_next(&mut self) -> super::Result<Record> {
-        if !self.header_skipped {
-            loop {
-                let c = self.reader.read_u8().await?;
-                if c == b'\n' {
-                    self.header_skipped = true;
-                    break;
-                }
-            }
-        }
+        self.skip_header().await?;
 
         loop {
-            let readed = self.reader.read_buf(&mut self.input_buf).await?;
-            if readed == 0 {
+            let bytes_read = self.reader.read_buf(&mut self.input_buf).await?;
+            if bytes_read == 0 {
                 return Err(super::Error::EOF);
             }
 
-            let (state, input_pos, output_pos, end_pos) = self.csv_reader.read_record(
-                &self.input_buf[..self.input_buf.len()],
-                &mut self.output_buf[..],
+            let (state, input_pos, _, end_pos) = self.csv_reader.read_record(
+                &self.input_buf,
+                &mut self.output_buf,
                 &mut self.end_buf[1..],
             );
 
             match state {
                 ReadRecordResult::InputEmpty => {
-                    self.grow_input_buf();
+                    self.ensure_input_capacity();
+                    continue;
+                }
+                ReadRecordResult::OutputFull => {
+                    self.ensure_output_capacity();
                     continue;
                 }
                 ReadRecordResult::OutputEndsFull => {
                     return Err(super::Error::MismatchedFormat(
-                        "The number of readed fields is greater than it defined in the config"
-                            .to_string(),
+                        "Too many fields in CSV record".to_string(),
                     ))
                 }
-                ReadRecordResult::OutputFull => {
-                    self.grow_output_buf();
-                    continue;
-                }
-                ReadRecordResult::End => unreachable!(),
                 ReadRecordResult::Record => {
-                    let record = self.end_buf[0..end_pos + 1]
-                        .windows(2)
-                        .enumerate()
-                        .filter_map(|(i, range)| {
-                            if !self.fields.contains_key(&i) {
-                                return None;
-                            }
-
-                            let start = range[0];
-                            let end = range[1];
-                            let field = &self.output_buf[start..end];
-                            let field = unsafe { std::str::from_utf8_unchecked(field) };
-                            let field = field.trim();
-
-                            let (name, r#type) = self.fields.get(&i).unwrap();
-                            let field = parse_value(field, r#type)
-                                .map_err(|_| {
-                                    super::Error::MismatchedFormat(format!(
-                                        "Failed to parse field {}: {}",
-                                        name, field
-                                    ))
-                                })
-                                .map(|v| (name.clone(), v));
-
-                            Some(field)
-                        })
-                        .collect::<Result<Record, super::Error>>()?;
-
-                    self.reset_end_buf();
-                    let next_input_buf = self.input_buf.split_off(input_pos);
-                    self.input_buf = next_input_buf;
+                    let record = self.parse_record(&self.end_buf, end_pos)?;
+                    self.input_buf = self.input_buf.split_off(input_pos);
 
                     return Ok(record);
                 }
+                ReadRecordResult::End => unreachable!(),
             }
         }
     }

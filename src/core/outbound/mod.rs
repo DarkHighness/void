@@ -1,4 +1,6 @@
 pub mod base;
-pub mod error;
+mod error;
 pub mod prometheus;
+pub mod stdio;
 
+pub use error::Error;

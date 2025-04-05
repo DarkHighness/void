@@ -43,7 +43,7 @@ impl ChannelGraph {
 
         let mut pipe_channels = HashMap::new();
         for pipe in pipes {
-            let tag = pipe.tag();
+            let tag = pipe.tag().clone();
 
             if pipe_channels.contains_key(&tag) {
                 panic!(
@@ -70,7 +70,7 @@ impl ChannelGraph {
 
         // Collecting channels for inbounds and outbounds
         for inbound in inbounds {
-            let tag = inbound.tag();
+            let tag = inbound.tag().clone();
             let mut outbounds = vec![];
 
             let node = nodes.get(&tag).expect("Node not found in DAG for inbound");
@@ -87,7 +87,7 @@ impl ChannelGraph {
 
         let mut outbound_channels = HashMap::new();
         for outbound in outbonds {
-            let tag = outbound.tag();
+            let tag = outbound.tag().clone();
             let mut inbounds = vec![];
 
             let node = nodes.get(&tag).expect("Node not found in DAG for outbound");
@@ -177,14 +177,14 @@ impl ChannelGraph {
             .chain(inbounds.iter().map(HasTag::tag))
             .chain(outbonds.iter().map(HasTag::tag))
         {
-            if nodes.contains_key(&tag) {
+            if nodes.contains_key(tag) {
                 panic!(
                     "Duplicate tag found: {}, panic should not be happen here",
                     tag
                 );
             }
 
-            nodes.insert(tag.clone(), dag.add_node(tag));
+            nodes.insert(tag.clone(), dag.add_node(tag.clone()));
         }
 
         for (tag, inbounds) in pipes
@@ -195,7 +195,7 @@ impl ChannelGraph {
             let node = nodes.get(&tag).expect("Node not found in DAG");
             for inbound in inbounds {
                 if let Some(inbound_node) = nodes.get(&inbound) {
-                    info!("Found data flow: {} -> {}", inbound, tag);
+                    info!("Found flow: {} -> {}", inbound, tag);
                     dag.add_edge(*inbound_node, *node, ());
                 } else {
                     return Err(super::Error::UnknownTagRequired(inbound, tag));

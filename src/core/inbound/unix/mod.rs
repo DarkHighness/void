@@ -15,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     config::{inbound::unix::UnixSocketConfig, ProtocolConfig},
     core::{
+        actor::Actor,
         manager::ChannelGraph,
         tag::{HasTag, TagId},
         types::Record,
@@ -95,13 +96,14 @@ impl Drop for UnixSocketInbound {
 }
 
 impl HasTag for UnixSocketInbound {
-    fn tag(&self) -> TagId {
-        self.tag.clone()
+    fn tag(&self) -> &TagId {
+        &self.tag
     }
 }
 
 #[async_trait]
-impl Inbound for UnixSocketInbound {
+impl Actor for UnixSocketInbound {
+    type Error = super::Error;
     async fn poll(
         &mut self,
         ctx: tokio_util::sync::CancellationToken,
@@ -134,3 +136,5 @@ impl Inbound for UnixSocketInbound {
         Ok(())
     }
 }
+
+impl Inbound for UnixSocketInbound {}

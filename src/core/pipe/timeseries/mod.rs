@@ -9,11 +9,14 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     config::pipe::timeseries::TimeseriesPipeConfig,
     core::{
+        actor::Actor,
         manager::ChannelGraph,
         tag::{HasTag, TagId},
         types::{Attribute, Record, Symbol, Value},
     },
 };
+
+use super::Pipe;
 
 pub struct TimeseriesPipe {
     tag: TagId,
@@ -55,14 +58,17 @@ impl TimeseriesPipe {
     fn transform(&self, record: Record) -> super::Result<Vec<Record>> {
         // Transform the given record into a timeseries format.
         let timestamp = match self.timestamp_field {
-            Some(ref field) => record
-                .get(field)
-                .cloned()
-                .ok_or(super::Error::InvalidRecord(format!(
-                    "Missing timestamp field: {}",
-                    field
-                )))?,
-            None => chrono::Utc::now().into(),
+            // If specified, use the timestamp field from the record.
+            Some(ref field) => record.get(field).cloned(),
+            // Otherwise, use the current time.
+            None => Some(chrono::Utc::now().into()),
+        };
+
+        let timestamp = match timestamp {
+            Some(ts) => ts,
+            None => {
+                return Err(super::Error::InvalidRecord("No timestamp found".into()));
+            }
         };
 
         let (labels, values) = record
@@ -76,11 +82,10 @@ impl TimeseriesPipe {
             .partition::<Vec<_>, _>(|(sym, _)| self.value_fields.contains(sym));
 
         if values.is_empty() {
-            warn!("{}: no values found in record", self.tag);
             return Err(super::Error::InvalidRecord("No values found".into()));
         }
 
-        let mut transformed_records = Vec::new();
+        let mut new_records = Vec::new();
         for (name, value) in values {
             let mut new_record = Record::empty();
             new_record.set("name".into(), name.into());
@@ -91,52 +96,47 @@ impl TimeseriesPipe {
                 new_record.set(key.clone(), value.clone().into());
             }
             new_record.set_attribute(Attribute::Type, RECORD_TYPE_TIMESERIES_VALUE.clone());
-            transformed_records.push(new_record);
+            new_records.push(new_record);
         }
 
-        if transformed_records.is_empty() {
+        if new_records.is_empty() {
             warn!("{}: no values found in record", self.tag);
             return Err(super::Error::InvalidRecord("No values found".into()));
         }
 
-        for record in &transformed_records {
+        for record in &new_records {
             info!("TimeSeries: {}", record);
         }
 
-        Ok(transformed_records)
+        Ok(new_records)
     }
 }
 
 impl HasTag for TimeseriesPipe {
-    fn tag(&self) -> TagId {
-        self.tag.clone()
+    fn tag(&self) -> &TagId {
+        &self.tag
     }
 }
 
 #[async_trait]
-impl super::Pipe for TimeseriesPipe {
+impl Actor for TimeseriesPipe {
+    type Error = super::Error;
     async fn poll(&mut self, ctx: CancellationToken) -> super::Result<()> {
         tokio::select! {
             _ = ctx.cancelled() => {
                 return Ok(());
             }
-            record = self.rx.recv() => match record {
-                Ok(record) => {
-                    let records = self.transform(record)?;
-                    for record in records {
-                        if let Err(err) = self.tx.send(record) {
-                            warn!("{}: error sending record: {:?}", self.tag, err);
-                            return Err(err.into());
-                        }
-                    }
-                },
-                Err(err) => {
-                    warn!("{}: error receiving record: {:?}", self.tag, err);
-                    return Err(err.into());
-                }
+            record = self.rx.recv() => {
+                let record = record?;
+                 self.transform(record)?.into_iter().map(|record| {
+                        self.tx.send(record)?;
+                        Ok::<(), super::Error>(())
+                    }).collect::<Result<Vec<_>, _>>()?;
             }
         }
 
         Ok(())
     }
 }
+
+impl Pipe for TimeseriesPipe {}

@@ -1,6 +1,7 @@
-use std::{collections::HashSet, fmt::Display};
-
 use serde::{Deserialize, Serialize};
+use std::ops::Deref;
+
+use std::{collections::HashSet, fmt::Display};
 
 use super::types::{resolve, Symbol};
 
@@ -11,7 +12,7 @@ pub struct TagId {
 }
 
 pub trait HasTag {
-    fn tag(&self) -> TagId;
+    fn tag(&self) -> &TagId;
 }
 
 impl std::fmt::Display for TagId {
@@ -94,6 +95,20 @@ macro_rules! impl_serde_for_scoped_tag_id {
                 write!(f, "{}", self.0.name)
             }
         }
+
+        impl AsRef<TagId> for $tag_id {
+            fn as_ref(&self) -> &TagId {
+                &self.0
+            }
+        }
+
+        impl Deref for $tag_id {
+            type Target = TagId;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
     };
 }
 
@@ -160,7 +175,7 @@ impl From<ScopedTagId> for TagId {
     }
 }
 
-pub fn find_duplicate_tags<T>(tags: &[T]) -> Option<Vec<TagId>>
+pub fn find_duplicate_tags<T>(tags: &[T]) -> Option<Vec<&TagId>>
 where
     T: HasTag,
 {

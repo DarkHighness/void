@@ -1,3 +1,6 @@
-use crate::core::tag::HasTag;
+use async_trait::async_trait;
 
-pub trait Outbound: HasTag + Send {}
+use crate::core::actor::Actor;
+
+#[async_trait]
+pub trait Outbound: Actor<Error = super::Error> {}

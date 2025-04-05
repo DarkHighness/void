@@ -1,20 +1,20 @@
 use serde::{Deserialize, Serialize};
 
-use crate::core::tag::HasTag;
+use crate::core::tag::{HasTag, TagId};
 
 use super::Verify;
 
 pub use super::{Error, Result};
 
 pub mod prometheus;
-pub mod stdout;
+pub mod stdio;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum OutboundConfig {
-    #[serde(rename = "stdout")]
-    Stdout(stdout::StdoutOutboundConfig),
+    #[serde(rename = "stdio")]
+    Stdio(stdio::StdioOutboundConfig),
     Prometheus(prometheus::PrometheusConfig),
 }
 
@@ -25,10 +25,10 @@ impl Verify for OutboundConfig {
 }
 
 impl HasTag for OutboundConfig {
-    fn tag(&self) -> crate::core::tag::TagId {
+    fn tag(&self) -> &TagId {
         match self {
-            OutboundConfig::Stdout(cfg) => From::from(&cfg.tag),
-            OutboundConfig::Prometheus(cfg) => From::from(&cfg.tag),
+            OutboundConfig::Stdio(cfg) => &cfg.tag,
+            OutboundConfig::Prometheus(cfg) => &cfg.tag,
         }
     }
 }
@@ -36,7 +36,7 @@ impl HasTag for OutboundConfig {
 impl OutboundConfig {
     pub fn inbounds(&self) -> Vec<crate::core::tag::TagId> {
         match self {
-            OutboundConfig::Stdout(cfg) => cfg.inbounds(),
+            OutboundConfig::Stdio(cfg) => cfg.inbounds(),
             OutboundConfig::Prometheus(cfg) => cfg.inbounds(),
         }
     }

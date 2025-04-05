@@ -70,6 +70,10 @@ impl Record {
         self.attributes.get_mut(key)
     }
 
+    pub fn get_type(&self) -> Option<&Value> {
+        self.get_attribute(&Attribute::Type)
+    }
+
     pub fn take(self) -> HashMap<Symbol, Value> {
         self.values
     }

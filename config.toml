@@ -5,7 +5,7 @@ mode = "line"
 protocol = "csv"
 
 [[outbounds]]
-type = "stdout"
+type = "stdio"
 inbounds = ["pipe:timeseries"]
 
 [[pipes]]

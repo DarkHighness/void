@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::tag::{HasTag, TagId};
 
-use super::Verify;
 pub use super::Result;
+use super::Verify;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -33,9 +33,9 @@ impl Display for InboundConfig {
 }
 
 impl HasTag for InboundConfig {
-    fn tag(&self) -> TagId {
+    fn tag(&self) -> &TagId {
         match self {
-            InboundConfig::UnixSocket(cfg) => From::from(&cfg.tag),
+            InboundConfig::UnixSocket(cfg) => &cfg.tag,
         }
     }
 }

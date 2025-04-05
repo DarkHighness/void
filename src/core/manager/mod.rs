@@ -3,6 +3,7 @@ mod graph;
 
 use std::collections::HashMap;
 
+use futures::TryFutureExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -39,7 +40,7 @@ pub fn try_create_from_config(cfg: Config) -> Result<Manager> {
         let protocols = cfg
             .protocols
             .into_iter()
-            .map(|p| (p.tag(), p))
+            .map(|p| (p.tag().clone(), p))
             .collect::<HashMap<_, _>>();
 
         cfg.inbounds
@@ -72,6 +73,11 @@ pub fn try_create_from_config(cfg: Config) -> Result<Manager> {
         channel_graph,
     };
 
+    info!(
+        "Total interned strings: {}",
+        crate::core::types::num_interned_strings()
+    );
+
     // let inbounds = ",".join(
     //     &mgr.inbounds
     //         .iter()
@@ -97,34 +103,23 @@ impl Manager {
             let inbound_futs = self
                 .inbounds
                 .iter_mut()
-                .map(|inbound| {
-                    let ctx = ctx.clone();
-                    async move { inbound.poll(ctx).await }
-                })
-                .collect::<Vec<_>>();
-
+                .map(|actor| actor.poll(ctx.clone()).map_err(Error::from));
             let pipe_futs = self
                 .pipes
                 .iter_mut()
-                .map(|pipe| {
-                    let ctx = ctx.clone();
-                    async move { pipe.poll(ctx).await }
-                })
-                .collect::<Vec<_>>();
+                .map(|actor| actor.poll(ctx.clone()).map_err(Error::from));
 
             tokio::select! {
-                futs = futures::future::join_all(inbound_futs) => {
-                    futs.into_iter()
+                inbounds = futures::future::join_all(inbound_futs) => {
+                    inbounds.into_iter()
                         .filter_map(|r| r.err())
-                        .map(Error::from)
                         .for_each(|err| {
                             error!("Inbound error: {}", err);
                         });
                 }
-                futs = futures::future::join_all(pipe_futs) => {
-                    futs.into_iter()
+                pipes = futures::future::join_all(pipe_futs) => {
+                    pipes.into_iter()
                         .filter_map(|r| r.err())
-                        .map(Error::from)
                         .for_each(|err| {
                             error!("Pipe error: {}", err);
                         });
