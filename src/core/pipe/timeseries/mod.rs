@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
-use futures::StreamExt;
 use log::warn;
 use once_cell::sync::Lazy;
 use tokio_util::sync::CancellationToken;

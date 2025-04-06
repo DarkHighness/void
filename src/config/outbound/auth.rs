@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::config::env::Env;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
@@ -9,14 +11,14 @@ pub enum AuthConfig {
     /// Basic authentication
     Basic {
         /// Username
-        username: String,
+        username: Env<String>,
         /// Password
-        password: String,
+        password: Env<String>,
     },
     /// Bearer token authentication
     Bearer {
         /// Token
-        token: String,
+        token: Env<String>,
     },
 }
 

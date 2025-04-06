@@ -1,5 +1,6 @@
 pub mod env;
 pub mod error;
+pub mod global;
 pub mod inbound;
 pub mod outbound;
 pub mod pipe;
@@ -8,6 +9,7 @@ pub mod protocol;
 use std::path::PathBuf;
 
 pub use error::{Error, Result};
+use global::{GlobalConfig, GLOBAL_CONFIG};
 pub use outbound::OutboundConfig;
 use pipe::PipeConfig;
 pub use protocol::ProtocolConfig;
@@ -22,6 +24,8 @@ pub trait Verify {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(default)]
+    pub global: GlobalConfig,
     pub inbounds: Vec<InboundConfig>,
     pub outbounds: Vec<OutboundConfig>,
     pub protocols: Vec<ProtocolConfig>,
@@ -60,6 +64,10 @@ impl Config {
         };
 
         config.verify()?;
+
+        GLOBAL_CONFIG
+            .set(config.global.clone())
+            .expect("Failed to set global config");
 
         Ok(config)
     }

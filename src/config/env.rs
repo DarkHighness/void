@@ -19,7 +19,7 @@ enum EnvStringType {
     String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Env<T> {
     r#type: EnvStringType,
     key: String,
