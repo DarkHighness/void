@@ -7,8 +7,8 @@ pub use error::{Error, Result};
 
 use crate::config::pipe::PipeConfig;
 pub use timeseries::{
-    LABELS_FIELD, METRIC_TYPE_FIELD, NAME_FIELD,
-    RECORD_TYPE_TIMESERIES_VALUE, TIMESTAMP_FIELD, VALUE_FIELD,
+    LABELS_FIELD, METRIC_TYPE_FIELD, NAME_FIELD, RECORD_TYPE_TIMESERIES_VALUE, TIMESTAMP_FIELD,
+    VALUE_FIELD,
 };
 
 use super::manager::ChannelGraph;
@@ -18,6 +18,9 @@ pub fn try_create_from(cfg: PipeConfig, channels: &mut ChannelGraph) -> Result<B
         PipeConfig::Timeseries(cfg) => {
             Box::new(timeseries::TimeseriesPipe::try_create_from(cfg, channels)?)
         }
+        PipeConfig::TimeseriesAction(cfg) => Box::new(
+            timeseries::TimeseriesActionPipe::try_create_from(cfg, channels)?,
+        ),
     };
 
     Ok(pipe)

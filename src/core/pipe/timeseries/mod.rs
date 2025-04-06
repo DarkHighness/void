@@ -1,7 +1,12 @@
+pub mod action;
+
+pub use action::TimeseriesActionPipe;
+
+pub use super::{Error, Result};
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
-use log::warn;
+use log::{error, info, warn};
 use once_cell::sync::Lazy;
 use tokio_util::sync::CancellationToken;
 
@@ -192,8 +197,11 @@ impl HasTag for TimeseriesPipe {
 impl Actor for TimeseriesPipe {
     type Error = super::Error;
     async fn poll(&mut self, ctx: CancellationToken) -> super::Result<()> {
+        let tag = self.tag.clone();
+
         let records = match recv_batch(
-            self.inbounds(),
+            &tag,
+            &mut self.inbounds,
             std::time::Duration::from_millis(500),
             4096,
             ctx,
@@ -207,11 +215,19 @@ impl Actor for TimeseriesPipe {
             Err(e) => return Err(e.into()),
         };
 
+        info!("{}: received {} records", self.tag, records.len());
+
         for record in records {
-            let transformed_records = self.transform(record)?;
-            for record in transformed_records {
-                if let Err(e) = self.outbound.send(record) {
-                    warn!("{}: failed to send record: {:?}", self.tag, e);
+            match self.transform(record) {
+                Ok(transformed_records) => {
+                    for record in transformed_records {
+                        if let Err(e) = self.outbound.send(record) {
+                            error!("{}: failed to send record: {:?}", self.tag, e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("{}: failed to transform record: {:?}", self.tag, e);
                 }
             }
         }
@@ -220,15 +236,7 @@ impl Actor for TimeseriesPipe {
     }
 }
 
-impl Pipe for TimeseriesPipe {
-    fn inbounds(&mut self) -> &mut [TaggedReceiver] {
-        &mut self.inbounds
-    }
-
-    fn outbound(&mut self) -> &mut TaggedSender {
-        &mut self.outbound
-    }
-}
+impl Pipe for TimeseriesPipe {}
 
 // Make sure the label matches [a-zA-Z_]([a-zA-Z0-9_])*
 pub fn ensure_valid_label(label: &str) -> super::Result<String> {

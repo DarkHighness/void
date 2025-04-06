@@ -1,3 +1,7 @@
+pub mod action;
+
+pub use super::{Error, Result};
+pub use action::TimeseriesActionPipeConfig;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -61,7 +65,7 @@ pub struct ValueField {
 }
 
 impl<'de> Deserialize<'de> for ValueField {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {

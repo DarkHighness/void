@@ -52,7 +52,10 @@ impl Actor for StdioOutbound {
     type Error = super::Error;
 
     async fn poll(&mut self, ctx: CancellationToken) -> super::Result<()> {
+        let tag = self.tag.clone();
+
         let records = match recv_batch(
+            &tag,
             self.inbounds(),
             std::time::Duration::from_millis(100),
             16,

@@ -1,16 +1,14 @@
-use log::{error, warn};
-use tokio::{
-    net::{unix::SocketAddr, UnixStream},
-    sync::broadcast,
-};
+use log::{debug, error, warn};
+use tokio::net::{unix::SocketAddr, UnixStream};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::ProtocolConfig,
     core::{
+        manager::TaggedSender,
         protocol::{self, ProtocolParser},
         tag::TagId,
-        types::{Attribute, Record},
+        types::Attribute,
     },
 };
 pub struct UnixConnection {
@@ -18,7 +16,7 @@ pub struct UnixConnection {
     remote_addr: SocketAddr,
 
     parser: Box<dyn ProtocolParser>,
-    sender: broadcast::Sender<Record>,
+    sender: TaggedSender,
 
     ctx: CancellationToken,
 }
@@ -28,7 +26,7 @@ impl UnixConnection {
         tag: TagId,
         stream: UnixStream,
         protocol_cfg: ProtocolConfig,
-        tx: broadcast::Sender<Record>,
+        tx: TaggedSender,
         ctx: CancellationToken,
     ) -> super::Result<Self> {
         let remote_addr = stream.peer_addr()?;
@@ -71,7 +69,12 @@ impl UnixConnection {
                 record.set_attribute(Attribute::Inbound, (&self.tag).into());
 
                 match self.sender.send(record) {
-                    Ok(_) => (),
+                    Ok(n) => {
+                        debug!(
+                            "unix connection of {}({:?}) send a record to {} receivers",
+                            self.tag, self.remote_addr, n
+                        );
+                    },
                     Err(_) => {
                         warn!(
                             "unix connection of {}({:?}) send a record failed, channel closed",

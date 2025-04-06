@@ -1,29 +1,31 @@
 [[inbounds]]
+tag = "data"
 type = "unix_socket"
-path = "/tmp/mtproxy.sock"
-protocol = "csv"
+path = "/tmp/data.sock"
+protocol = "data_csv"
 
 [[inbounds]]
-tag = "unix_socket2"
+tag = "control"
 type = "unix_socket"
-path = "/tmp/mtproxy2.sock"
-protocol = "csv"
+path = "/tmp/control.sock"
+protocol = "control_csv"
 
 [[outbounds]]
 type = "stdio"
-inbounds = ["pipe:timeseries"]
-disabled = true
+inbounds = ["pipe:timeseries_action"]
+disabled = false
 
-[[outbounds]]
-type = "prometheus"
-inbounds = ["pipe:timeseries"]
-address = "env:PROMETHEUS_ADDRESS"
-interval = "100ms"
-auth = { type = "basic", username = "admin", password = "env:PASSWORD" }
+# [[outbounds]]
+# type = "prometheus"
+# inbounds = ["pipe:timeseries_action"]
+# address = "env:PROMETHEUS_ADDRESS"
+# interval = "100ms"
+# auth = { type = "basic", username = "admin", password = "env:PASSWORD" }
+# disabled = true
 
 [[pipes]]
 type = "timeseries"
-inbounds = ["inbound:unix_socket", "inbound:unix_socket2"]
+inbounds = ["inbound:data"]
 values = ["utilization.gpu", "temperature.gpu", "power.draw", "clocks.gr", "clocks.mem",
   "clocks_throttle_reasons.hw_slowdown", "clocks_throttle_reasons.hw_thermal_slowdown",
   "clocks_throttle_reasons.sw_power_cap", "clocks_throttle_reasons.hw_power_brake_slowdown",
@@ -32,7 +34,13 @@ labels = ["index"]
 timestamp = "timestamp"
 extra_labels = { job = "void" }
 
+[[pipes]]
+type = "timeseries_action"
+data_inbounds = ["pipe:timeseries"]
+control_inbounds = ["inbound:control"]
+
 [[protocols]]
+tag = "data_csv"
 type = "csv"
 has_header = true
 fields = [
@@ -49,4 +57,14 @@ fields = [
   { name = "clocks_throttle_reasons.hw_power_brake_slowdown", type = "bool" },
   { name = "clocks_throttle_reasons.gpu_idle", type = "bool" },
   { name = "clocks_throttle_reasons.applications_clocks_setting", type = "bool" }
+]
+
+[[protocols]]
+tag = "control_csv"
+type = "csv"
+has_header = false
+fields = [
+  { name = "action", type = "string" },
+  { name = "name", type = "string" },
+  { name = "value", type = "string", optional = true },
 ]

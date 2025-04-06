@@ -16,6 +16,8 @@ pub struct CSVField {
     pub r#type: DataType,
     #[serde(default)]
     pub index: usize,
+    #[serde(default)]
+    pub optional: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +102,18 @@ impl Verify for CSVProtocolConfig {
             if field.name.is_empty() {
                 return Err(crate::config::Error::InvalidConfig(
                     "CSV field name cannot be empty".to_string(),
+                ));
+            }
+        }
+
+        // Optional fields should be at the end of the list
+        let mut optional = false;
+        for field in &self.fields {
+            if field.optional {
+                optional = true;
+            } else if optional {
+                return Err(crate::config::Error::InvalidConfig(
+                    "CSV optional fields should be at the end".to_string(),
                 ));
             }
         }

@@ -19,7 +19,7 @@ pub struct CSVProtocol<R> {
     has_header: bool,
     header_skipped: bool,
 
-    fields: HashMap<usize, (Symbol, DataType)>,
+    fields: HashMap<usize, (Symbol, DataType, bool)>,
     num_fields: usize,
 
     input_buf: BytesMut,
@@ -35,7 +35,7 @@ where
         let fields = cfg
             .fields
             .into_iter()
-            .map(|c| (c.index, (c.name, c.r#type)))
+            .map(|c| (c.index, (c.name, c.r#type, c.optional)))
             .collect::<HashMap<usize, _>>();
 
         let csv_reader = csv_core::ReaderBuilder::new()
@@ -87,7 +87,8 @@ where
             .windows(2)
             .enumerate()
             .filter_map(|(i, range)| {
-                self.fields.get(&i).map(|(name, data_type)| {
+                // Optional fields will be skipped if (end_pos + 1) is less than the field index
+                self.fields.get(&i).map(|(name, data_type, _)| {
                     let start = range[0];
                     let end = range[1];
                     let field = &self.output_buf[start..end];

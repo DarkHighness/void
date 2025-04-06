@@ -383,6 +383,20 @@ impl Value {
         }
     }
 
+    pub fn cast_string(&self) -> super::Result<Self> {
+        match self {
+            Value::String(_) => Ok(self.clone()),
+            Value::Int(number) => Ok(Value::String(number.to_string().into())),
+            Value::Float(number) => Ok(Value::String(number.to_string().into())),
+            Value::Bool(boolean) => Ok(Value::String(boolean.to_string().into())),
+            Value::DateTime(datetime) => Ok(Value::String(datetime.to_rfc3339().into())),
+            _ => Err(super::Error::InvalidValueType(format!(
+                "Cannot cast {} to string",
+                self.type_name()
+            ))),
+        }
+    }
+
     pub fn as_string(&self) -> super::Result<&super::string::Symbol> {
         if let Value::String(string) = self {
             Ok(string)

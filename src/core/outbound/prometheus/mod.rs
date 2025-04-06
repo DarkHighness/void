@@ -67,9 +67,10 @@ impl Actor for PrometheusOutbound {
     type Error = super::Error;
 
     async fn poll(&mut self, ctx: CancellationToken) -> std::result::Result<(), Self::Error> {
+        let tag = self.tag.clone();
         let interval = (&self.interval).clone();
 
-        let records = match recv_batch(self.inbounds(), interval, 1024, ctx).await {
+        let records = match recv_batch(&tag, self.inbounds(), interval, 1024, ctx).await {
             Ok(records) => records,
             Err(crate::utils::recv::Error::Timeout) => {
                 return Ok(());

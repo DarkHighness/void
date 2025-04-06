@@ -24,6 +24,7 @@ pub struct ActorChannel {
     receiver: broadcast::Receiver<Record>,
 }
 
+#[derive(Debug, Clone)]
 pub struct TaggedSender {
     tag: TagId,
     sender: broadcast::Sender<Record>,
@@ -43,6 +44,7 @@ impl TaggedSender {
     }
 }
 
+#[derive(Debug)]
 pub struct TaggedReceiver {
     tag: TagId,
     receiver: broadcast::Receiver<Record>,
@@ -208,7 +210,10 @@ impl ChannelGraph {
     }
 
     pub fn recv_from(&mut self, tag: &TagId, who: &TagId) -> TaggedReceiver {
-        let channel = self.channels.get(tag).expect("Channel not found in DAG");
+        let channel = self.channels.get(tag).expect(&format!(
+            "Channel not found in DAG, {} wants to receive from {}",
+            who, tag,
+        ));
         let receiver = channel.receiver();
 
         let src = self.tag_2_idx.get(tag).expect("Tag not found in DAG");
