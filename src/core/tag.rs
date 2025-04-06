@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
-use std::ops::Deref;
+use std::{fmt::Display, ops::Deref};
 
 use std::collections::HashSet;
 
-use super::types::{resolve, Symbol};
+use super::types::{resolve, Symbol, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TagId {
@@ -15,9 +15,15 @@ pub trait HasTag {
     fn tag(&self) -> &TagId;
 }
 
-impl std::fmt::Display for TagId {
+impl Display for TagId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.scope, self.name)
+    }
+}
+
+impl From<&TagId> for Value {
+    fn from(tag_id: &TagId) -> Self {
+        Value::String(tag_id.to_string().into())
     }
 }
 

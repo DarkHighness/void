@@ -18,6 +18,8 @@ pub fn try_create_from(
         OutboundConfig::Stdio(cfg) => Ok(Box::new(stdio::StdioOutbound::try_create_from(
             cfg, channels,
         )?)),
-        OutboundConfig::Prometheus(cfg) => todo!(),
+        OutboundConfig::Prometheus(cfg) => Ok(Box::new(
+            prometheus::PrometheusOutbound::try_create_from(cfg, channels)?,
+        )),
     }
 }

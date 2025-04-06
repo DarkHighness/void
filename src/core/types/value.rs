@@ -1,14 +1,10 @@
-use std::{
-    collections::HashMap,
-    fmt::Display,
-    str::FromStr,
-};
+use std::{collections::HashMap, fmt::Display, str::FromStr};
 
-use chrono::TimeZone;
+use chrono::{Offset, TimeZone};
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 
-use super::DataType;
+use super::{DataType, Symbol};
 
 pub const VALUE_TYPE_NULL: &str = "null";
 pub const VALUE_TYPE_STRING: &str = "string";
@@ -132,6 +128,18 @@ impl From<Number<f64>> for Number<i64> {
             value: number.value as i64,
             unit: number.unit,
         }
+    }
+}
+
+impl AsRef<i64> for Number<i64> {
+    fn as_ref(&self) -> &i64 {
+        &self.value
+    }
+}
+
+impl AsRef<f64> for Number<f64> {
+    fn as_ref(&self) -> &f64 {
+        &self.value
     }
 }
 
@@ -272,7 +280,13 @@ impl From<HashMap<super::string::Symbol, Value>> for Value {
 
 impl From<Vec<(super::string::Symbol, Value)>> for Value {
     fn from(array: Vec<(super::string::Symbol, Value)>) -> Self {
-        let map = array
+        array.into_iter().collect()
+    }
+}
+
+impl FromIterator<(super::string::Symbol, Value)> for Value {
+    fn from_iter<T: IntoIterator<Item = (super::string::Symbol, Value)>>(iter: T) -> Self {
+        let map = iter
             .into_iter()
             .map(|(key, value)| (Value::String(key), value))
             .collect();
@@ -287,9 +301,22 @@ impl From<Vec<(Value, Value)>> for Value {
     }
 }
 
+impl FromIterator<(Value, Value)> for Value {
+    fn from_iter<T: IntoIterator<Item = (Value, Value)>>(iter: T) -> Self {
+        let map = iter.into_iter().collect();
+        Value::Map(map)
+    }
+}
+
 impl From<Vec<Value>> for Value {
     fn from(array: Vec<Value>) -> Self {
         Value::Array(array)
+    }
+}
+
+impl From<&Symbol> for Value {
+    fn from(symbol: &Symbol) -> Self {
+        Value::String(symbol.clone())
     }
 }
 
@@ -343,12 +370,126 @@ impl Value {
         matches!(self, Value::Array(_))
     }
 
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Value::Null => VALUE_TYPE_NULL,
+            Value::String(_) => VALUE_TYPE_STRING,
+            Value::Int(_) => VALUE_TYPE_INT,
+            Value::Float(_) => VALUE_TYPE_FLOAT,
+            Value::Bool(_) => VALUE_TYPE_BOOL,
+            Value::DateTime(_) => VALUE_TYPE_DATETIME,
+            Value::Map(_) => VALUE_TYPE_MAP,
+            Value::Array(_) => VALUE_TYPE_ARRAY,
+        }
+    }
+
+    pub fn as_string(&self) -> super::Result<&super::string::Symbol> {
+        if let Value::String(string) = self {
+            Ok(string)
+        } else {
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a string, but got {}",
+                self.type_name()
+            )))
+        }
+    }
+
+    pub fn as_int(&self) -> super::Result<&Number<i64>> {
+        if let Value::Int(number) = self {
+            Ok(number)
+        } else {
+            Err(super::Error::InvalidValueType(format!(
+                "Expected an int, but got {}",
+                self.type_name()
+            )))
+        }
+    }
+
+    pub fn as_float(&self) -> super::Result<&Number<f64>> {
+        if let Value::Float(number) = self {
+            Ok(number)
+        } else {
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a float, but got {}",
+                self.type_name()
+            )))
+        }
+    }
+
+    pub fn as_bool(&self) -> super::Result<bool> {
+        if let Value::Bool(boolean) = self {
+            Ok(*boolean)
+        } else {
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a bool, but got {}",
+                self.type_name()
+            )))
+        }
+    }
+
+    pub fn as_datetime(&self) -> super::Result<&chrono::DateTime<chrono::Utc>> {
+        if let Value::DateTime(datetime) = self {
+            Ok(datetime)
+        } else {
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a datetime, but got {}",
+                self.type_name()
+            )))
+        }
+    }
+
+    pub fn as_map(&self) -> super::Result<&HashMap<Value, Value>> {
+        if let Value::Map(map) = self {
+            Ok(map)
+        } else {
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a map, but got {}",
+                self.type_name()
+            )))
+        }
+    }
+
+    pub fn as_map_mut(&mut self) -> super::Result<&mut HashMap<Value, Value>> {
+        if let Value::Map(map) = self {
+            Ok(map)
+        } else {
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a map, but got {}",
+                self.type_name()
+            )))
+        }
+    }
+
+    pub fn as_array(&self) -> super::Result<&Vec<Value>> {
+        if let Value::Array(array) = self {
+            Ok(array)
+        } else {
+            Err(super::Error::InvalidValueType(format!(
+                "Expected an array, but got {}",
+                self.type_name()
+            )))
+        }
+    }
+    pub fn as_array_mut(&mut self) -> super::Result<&mut Vec<Value>> {
+        if let Value::Array(array) = self {
+            Ok(array)
+        } else {
+            Err(super::Error::InvalidValueType(format!(
+                "Expected an array, but got {}",
+                self.type_name()
+            )))
+        }
+    }
+
     pub fn map_set(&mut self, key: Value, value: Value) -> super::Result<()> {
         if let Value::Map(map) = self {
             map.insert(key, value);
             Ok(())
         } else {
-            Err(super::Error::InvalidValueType("Expected a map".to_string()))
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a map, but got {}",
+                self.type_name()
+            )))
         }
     }
 
@@ -356,7 +497,10 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(map.get(key))
         } else {
-            Err(super::Error::InvalidValueType("Expected a map".to_string()))
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a map, but got {}",
+                self.type_name()
+            )))
         }
     }
 
@@ -364,7 +508,10 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(map.contains_key(key))
         } else {
-            Err(super::Error::InvalidValueType("Expected a map".to_string()))
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a map, but got {}",
+                self.type_name()
+            )))
         }
     }
 
@@ -372,7 +519,10 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(map.remove(key))
         } else {
-            Err(super::Error::InvalidValueType("Expected a map".to_string()))
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a map, but got {}",
+                self.type_name()
+            )))
         }
     }
 
@@ -380,7 +530,10 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(map.keys().collect())
         } else {
-            Err(super::Error::InvalidValueType("Expected a map".to_string()))
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a map, but got {}",
+                self.type_name()
+            )))
         }
     }
 
@@ -388,7 +541,33 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(map.values().collect())
         } else {
-            Err(super::Error::InvalidValueType("Expected a map".to_string()))
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a map, but got {}",
+                self.type_name()
+            )))
+        }
+    }
+
+    pub fn map_len(&self) -> super::Result<usize> {
+        if let Value::Map(map) = self {
+            Ok(map.len())
+        } else {
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a map, but got {}",
+                self.type_name()
+            )))
+        }
+    }
+
+    pub fn map_clear(&mut self) -> super::Result<()> {
+        if let Value::Map(map) = self {
+            map.clear();
+            Ok(())
+        } else {
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a map, but got {}",
+                self.type_name()
+            )))
         }
     }
 
@@ -397,9 +576,10 @@ impl Value {
             array.push(value);
             Ok(())
         } else {
-            Err(super::Error::InvalidValueType(
-                "Expected an array".to_string(),
-            ))
+            Err(super::Error::InvalidValueType(format!(
+                "Expected a array, but got {}",
+                self.type_name()
+            )))
         }
     }
 
@@ -407,9 +587,10 @@ impl Value {
         if let Value::Array(array) = self {
             Ok(array.get(index))
         } else {
-            Err(super::Error::InvalidValueType(
-                "Expected an array".to_string(),
-            ))
+            Err(super::Error::InvalidValueType(format!(
+                "Expected an array, but got {}",
+                self.type_name()
+            )))
         }
     }
 
@@ -417,9 +598,10 @@ impl Value {
         if let Value::Array(array) = self {
             Ok(array.len())
         } else {
-            Err(super::Error::InvalidValueType(
-                "Expected an array".to_string(),
-            ))
+            Err(super::Error::InvalidValueType(format!(
+                "Expected an array, but got {}",
+                self.type_name()
+            )))
         }
     }
 
@@ -431,9 +613,10 @@ impl Value {
                 Ok(None)
             }
         } else {
-            Err(super::Error::InvalidValueType(
-                "Expected an array".to_string(),
-            ))
+            Err(super::Error::InvalidValueType(format!(
+                "Expected an array, but got {}",
+                self.type_name()
+            )))
         }
     }
 
@@ -442,9 +625,10 @@ impl Value {
             array.clear();
             Ok(())
         } else {
-            Err(super::Error::InvalidValueType(
-                "Expected an array".to_string(),
-            ))
+            Err(super::Error::InvalidValueType(format!(
+                "Expected an array, but got {}",
+                self.type_name()
+            )))
         }
     }
 
@@ -452,9 +636,10 @@ impl Value {
         if let Value::Array(array) = self {
             Ok(array.iter())
         } else {
-            Err(super::Error::InvalidValueType(
-                "Expected an array".to_string(),
-            ))
+            Err(super::Error::InvalidValueType(format!(
+                "Expected an array, but got {}",
+                self.type_name()
+            )))
         }
     }
 }
@@ -511,11 +696,11 @@ impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::Null => write!(f, "null"),
-            Value::String(string) => write!(f, "\"{}\"", string),
+            Value::String(string) => write!(f, "{}", string),
             Value::Int(number) => write!(f, "{}", number.to_string()),
             Value::Float(number) => write!(f, "{}", number.to_string()),
             Value::Bool(boolean) => write!(f, "{}", boolean),
-            Value::DateTime(datetime) => write!(f, "\"{}\"", datetime),
+            Value::DateTime(datetime) => write!(f, "{}", datetime),
             Value::Map(map) => {
                 let map_str = map
                     .iter()
@@ -637,9 +822,8 @@ fn parse_datetime_value(value: &str) -> super::Result<Value> {
 
     for format in FORMATS.iter() {
         if let Ok(datetime) = chrono::NaiveDateTime::parse_from_str(value, format) {
-            if let Some(datetime) = datetime.and_local_timezone(chrono::Utc).single() {
-                return Ok(datetime.into());
-            }
+            let utc = datetime.and_utc() - chrono::Local::now().offset().fix();
+            return Ok(utc.into());
         }
     }
 

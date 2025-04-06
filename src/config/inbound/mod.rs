@@ -22,6 +22,12 @@ impl InboundConfig {
             InboundConfig::UnixSocket(cfg) => From::from(&cfg.protocol),
         }
     }
+
+    pub fn disabled(&self) -> bool {
+        match self {
+            InboundConfig::UnixSocket(cfg) => cfg.disabled,
+        }
+    }
 }
 
 impl Display for InboundConfig {

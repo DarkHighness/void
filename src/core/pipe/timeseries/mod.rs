@@ -1,20 +1,20 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::StreamExt;
 use log::warn;
 use once_cell::sync::Lazy;
-use tokio::sync::broadcast::error::RecvError;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::pipe::timeseries::TimeseriesPipeConfig,
+    config::pipe::timeseries::{MetricType, TimeseriesPipeConfig},
     core::{
         actor::Actor,
         manager::{ChannelGraph, TaggedReceiver, TaggedSender},
         tag::{HasTag, TagId},
         types::{Attribute, Record, Symbol, Value},
     },
+    utils::recv::recv_batch,
 };
 
 use super::Pipe;
@@ -22,21 +22,30 @@ use super::Pipe;
 pub struct TimeseriesPipe {
     tag: TagId,
 
-    label_fields: Vec<Symbol>,
-    value_fields: Vec<Symbol>,
-    timestamp_field: Option<Symbol>,
+    label_syms: Vec<Symbol>,
+
+    value_metric_types: HashMap<Symbol, MetricType>,
+
+    value_syms: HashSet<Symbol>,
+
+    timestamp_sym: Option<Symbol>,
     extra_labels: HashMap<Symbol, String>,
 
     inbounds: Vec<TaggedReceiver>,
     outbound: TaggedSender,
-
-    lagged_inbound_index: Option<(usize, u64)>,
 }
 
-pub static RECORD_TYPE_TIMESERIES: Lazy<Symbol> = Lazy::new(|| Symbol::from("TimeseriesRecord"));
+pub static RECORD_TYPE_TIMESERIES: Lazy<Symbol> = Lazy::new(|| Symbol::intern("TimeseriesRecord"));
 
-static RECORD_TYPE_TIMESERIES_VALUE: Lazy<Value> =
+pub static RECORD_TYPE_TIMESERIES_VALUE: Lazy<Value> =
     Lazy::new(|| Value::from(RECORD_TYPE_TIMESERIES.as_ref()));
+
+pub static NAME_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("name"));
+pub static TIMESTAMP_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("timestamp"));
+pub static METRIC_TYPE_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("metric_type"));
+pub static LABELS_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("labels"));
+pub static VALUE_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("value"));
+pub static UNIT_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("unit"));
 
 impl TimeseriesPipe {
     pub fn try_create_from(
@@ -51,21 +60,45 @@ impl TimeseriesPipe {
             .collect::<Vec<_>>();
         let outbound = channels.sender(&tag);
 
+        let value_syms = cfg
+            .values
+            .iter()
+            .map(|field| field.name.clone())
+            .collect::<HashSet<_>>();
+
+        let value_metric_types = cfg
+            .values
+            .into_iter()
+            .map(|field| (field.name, field.r#type))
+            .collect::<HashMap<_, _>>();
+
+        let label_syms = cfg
+            .labels
+            .into_iter()
+            .map(|label| label.clone())
+            .collect::<Vec<_>>();
+
         Ok(TimeseriesPipe {
             tag,
-            label_fields: cfg.labels,
-            value_fields: cfg.values,
-            timestamp_field: cfg.timestamp,
+            label_syms,
+            value_metric_types,
+            value_syms,
+            timestamp_sym: cfg.timestamp,
             extra_labels: cfg.extra_labels,
             inbounds,
             outbound,
-            lagged_inbound_index: None,
+            // lagged_inbound_index: None,
         })
     }
 
     fn transform(&self, record: Record) -> super::Result<Vec<Record>> {
+        let inbound = record
+            .get_attribute(&Attribute::Inbound)
+            .cloned()
+            .unwrap_or_else(|| (&self.tag).into());
+
         // Transform the given record into a timeseries format.
-        let timestamp = match self.timestamp_field {
+        let timestamp = match self.timestamp_sym {
             // If specified, use the timestamp field from the record.
             Some(ref field) => record.get(field).cloned(),
             // Otherwise, use the current time.
@@ -82,12 +115,18 @@ impl TimeseriesPipe {
         let (labels, values) = record
             .take()
             .into_iter()
-            .partition::<Vec<_>, _>(|(sym, _)| self.label_fields.contains(sym));
-        let labels: Value = labels.into();
+            .partition::<Vec<_>, _>(|(sym, _)| self.label_syms.contains(sym));
+        let labels: Value = labels
+            .into_iter()
+            .map(|(sym, value)| {
+                let key = ensure_valid_label(sym.as_ref())?;
+                Ok((Symbol::from(key), value))
+            })
+            .collect::<super::Result<_>>()?;
 
         let (values, _) = values
             .into_iter()
-            .partition::<Vec<_>, _>(|(sym, _)| self.value_fields.contains(sym));
+            .partition::<Vec<_>, _>(|(sym, _)| self.value_syms.contains(sym));
 
         if values.is_empty() {
             return Err(super::Error::InvalidRecord("No values found".into()));
@@ -97,30 +136,40 @@ impl TimeseriesPipe {
         for (name, value) in values {
             let mut new_record = Record::empty();
 
-            new_record.set("name".into(), name.into());
-            new_record.set("timestamp".into(), timestamp.clone());
+            let metric_type = self.value_metric_types.get(&name).cloned().unwrap();
+            let name = ensure_valid_name(name.as_ref())?;
+
+            new_record.set(NAME_FIELD.clone(), name.into());
+            new_record.set(METRIC_TYPE_FIELD.clone(), Value::String(metric_type.into()));
+            new_record.set(TIMESTAMP_FIELD.clone(), timestamp.clone());
 
             let (unit, value) = match value {
                 Value::Float(mut n) => (n.unit.take(), n.value),
                 Value::Int(mut n) => (n.unit.take(), n.value as f64),
-                _ => return Err(super::Error::InvalidRecord("Value is not a number".into())),
+                Value::Bool(n) => (None, if n { 1.0 } else { 0.0 }),
+                _ => {
+                    return Err(super::Error::InvalidRecord(
+                        "Value is not a number or bool".into(),
+                    ))
+                }
             };
 
             let value = value.into();
-            new_record.set("value".into(), value);
+            new_record.set(VALUE_FIELD.clone(), value);
 
             let mut labels = labels.clone();
             match unit {
-                Some(unit) => labels.map_set("unit".into(), unit.into())?,
+                Some(unit) => labels.map_set(UNIT_FIELD.clone().into(), unit.into())?,
                 None => {}
             };
-            new_record.set("labels".into(), labels);
 
             for (key, value) in &self.extra_labels {
-                new_record.set(key.clone(), value.clone().into());
+                labels.map_set(key.into(), value.as_str().into())?;
             }
+            new_record.set(LABELS_FIELD.clone(), labels);
 
             new_record.set_attribute(Attribute::Type, RECORD_TYPE_TIMESERIES_VALUE.clone());
+            new_record.set_attribute(Attribute::Inbound, inbound.clone());
 
             new_records.push(new_record);
         }
@@ -131,88 +180,6 @@ impl TimeseriesPipe {
         }
 
         Ok(new_records)
-    }
-
-    async fn next_record(&mut self, ctx: CancellationToken) -> super::Result<Record> {
-        // Try to receive from the lagged inbound channel first.
-        loop {
-            if let Some((index, count)) = self.lagged_inbound_index.take() {
-                match self.try_receive_from_lagged(index, count).await {
-                    Ok(Some(record)) => return Ok(record),
-                    Ok(None) => {}
-                    Err(e) => return Err(e),
-                }
-            }
-
-            let mut futures = FuturesUnordered::new();
-            for (i, rx) in self.inbounds.iter_mut().enumerate() {
-                let tag = rx.tag().clone();
-
-                futures.push(async move {
-                    match rx.recv().await {
-                        Ok(record) => Ok((i, record)),
-                        Err(RecvError::Closed) => Err(super::Error::InboundRecvError(format!(
-                            "Inbound channel {} closed",
-                            tag
-                        ))),
-                        Err(RecvError::Lagged(n)) => Err(super::Error::ChannelLagged(i, n)),
-                    }
-                });
-            }
-
-            let tag = self.tag.clone();
-            if let Some(result) = futures.next().await {
-                match result {
-                    Ok((_, record)) => return Ok(record),
-                    Err(super::Error::ChannelLagged(index, n)) => {
-                        warn!("{}: inbound {} lagged {}", &tag, index, n);
-                        self.lagged_inbound_index = Some((index, n));
-
-                        // Retry
-                        continue;
-                    }
-                    Err(e) => return Err(e),
-                }
-            } else {
-                return Err(super::Error::AllInboundsClosed(tag));
-            };
-        }
-    }
-
-    async fn try_receive_from_lagged(
-        &mut self,
-        index: usize,
-        count: u64,
-    ) -> super::Result<Option<Record>> {
-        let rx = self
-            .inbounds
-            .get_mut(index)
-            .expect("inbound index out of bounds");
-
-        let tag = rx.tag().clone();
-
-        tokio::select! {
-            record = rx.recv() => match record {
-                Ok(record) => {
-                    if count > 0 {
-                        self.lagged_inbound_index = Some((index, count - 1));
-                    }
-                    Ok(Some(record))
-                },
-                Err(RecvError::Closed) => {
-                    Err(super::Error::InboundRecvError(format!("Channel {} closed", tag)))
-                },
-                Err(RecvError::Lagged(n)) => {
-                    warn!("{}: inbound {} lagged additional {}", self.tag, index, n);
-                    self.lagged_inbound_index = Some((index, count + n));
-                    Ok(None)
-                }
-            },
-            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-                self.lagged_inbound_index = None;
-                Ok(None)
-            }
-        }
     }
 }
 
@@ -226,20 +193,27 @@ impl HasTag for TimeseriesPipe {
 impl Actor for TimeseriesPipe {
     type Error = super::Error;
     async fn poll(&mut self, ctx: CancellationToken) -> super::Result<()> {
-        let record = self.next_record(ctx).await;
-
-        let record = match record {
-            Ok(record) => record,
-            Err(e) => {
-                warn!("{}: failed to transform record: {:?}", self.tag, e);
+        let records = match recv_batch(
+            self.inbounds(),
+            std::time::Duration::from_millis(500),
+            4096,
+            ctx,
+        )
+        .await
+        {
+            Ok(records) => records,
+            Err(crate::utils::recv::Error::Timeout) => {
                 return Ok(());
             }
+            Err(e) => return Err(e.into()),
         };
 
-        let records = self.transform(record)?;
         for record in records {
-            if let Err(e) = self.outbound.send(record) {
-                warn!("{}: failed to send record: {:?}", self.tag, e);
+            let transformed_records = self.transform(record)?;
+            for record in transformed_records {
+                if let Err(e) = self.outbound.send(record) {
+                    warn!("{}: failed to send record: {:?}", self.tag, e);
+                }
             }
         }
 
@@ -247,4 +221,85 @@ impl Actor for TimeseriesPipe {
     }
 }
 
-impl Pipe for TimeseriesPipe {}
+impl Pipe for TimeseriesPipe {
+    fn inbounds(&mut self) -> &mut [TaggedReceiver] {
+        &mut self.inbounds
+    }
+
+    fn outbound(&mut self) -> &mut TaggedSender {
+        &mut self.outbound
+    }
+}
+
+// Make sure the label matches [a-zA-Z_]([a-zA-Z0-9_])*
+pub fn ensure_valid_label(label: &str) -> super::Result<String> {
+    let label = label.trim();
+    // transform `.` to `_`
+    let label = label.replace('.', "_");
+    if label.is_empty() {
+        return Err(super::Error::InvalidRecord("Label is empty".into()));
+    }
+
+    if !label
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(super::Error::InvalidRecord(format!(
+            "Label {} contains invalid characters",
+            label
+        )));
+    }
+
+    if label.starts_with(|c: char| c.is_ascii_digit()) {
+        return Err(super::Error::InvalidRecord(format!(
+            "Label {} starts with a digit",
+            label
+        )));
+    }
+
+    if label.contains("__") {
+        return Err(super::Error::InvalidRecord(format!(
+            "Label {} contains double underscore",
+            label
+        )));
+    }
+
+    Ok(label)
+}
+
+// Make sure the name matches [a-zA-Z_:]([a-zA-Z0-9_:])*
+pub fn ensure_valid_name(name: &str) -> super::Result<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(super::Error::InvalidRecord("Name is empty".into()));
+    }
+
+    // transform `.` to `_`
+    let name = name.replace('.', "_");
+
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':' || c == '-')
+    {
+        return Err(super::Error::InvalidRecord(format!(
+            "Name {} contains invalid characters",
+            name
+        )));
+    }
+
+    if name.starts_with(|c: char| c.is_ascii_digit()) {
+        return Err(super::Error::InvalidRecord(format!(
+            "Name {} starts with a digit",
+            name
+        )));
+    }
+
+    if name.contains("__") {
+        return Err(super::Error::InvalidRecord(format!(
+            "Name {} contains double underscore",
+            name
+        )));
+    }
+
+    Ok(name)
+}

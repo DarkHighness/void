@@ -31,4 +31,10 @@ impl HasTag for PipeConfig {
     }
 }
 
-impl PipeConfig {}
+impl PipeConfig {
+    pub fn disabled(&self) -> bool {
+        match self {
+            PipeConfig::Timeseries(cfg) => cfg.disabled,
+        }
+    }
+}

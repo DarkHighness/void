@@ -19,6 +19,9 @@ pub struct StdioOutboundConfig {
     pub r#inbounds: Vec<TagId>,
     #[serde(default = "default_io")]
     pub io: Io,
+
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 impl Verify for StdioOutboundConfig {

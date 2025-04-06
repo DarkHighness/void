@@ -116,7 +116,7 @@ impl Hash for TaggedReceiver {
     }
 }
 
-pub const CHANNEL_BUFFER_SIZE: usize = 64;
+pub const CHANNEL_BUFFER_SIZE: usize = 1024;
 
 impl ActorChannel {
     pub fn new(tag: TagId) -> Self {

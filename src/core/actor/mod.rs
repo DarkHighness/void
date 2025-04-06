@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use log::info;
+use log::{error, info};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -39,7 +39,9 @@ where
                     }
                     r = actor.poll(ctx.clone()) => match r {
                         Ok(()) => {}
-                        Err(err) => return Err(err.into()),
+                        Err(err) => {
+                            error!("{}: error: {}", tag, err.into());
+                        },
                     }
                 }
             }

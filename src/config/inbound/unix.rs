@@ -13,6 +13,8 @@ pub struct UnixSocketConfig {
     pub tag: InboundTagId,
     pub path: PathBuf,
     pub protocol: ProtocolTagId,
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 impl Display for UnixSocketConfig {

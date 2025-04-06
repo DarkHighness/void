@@ -10,7 +10,7 @@ use crate::{
     core::{
         protocol::{self, ProtocolParser},
         tag::TagId,
-        types::Record,
+        types::{Attribute, Record},
     },
 };
 pub struct UnixConnection {
@@ -50,7 +50,7 @@ impl UnixConnection {
             loop {
                 let next_record = self.parser.read_next();
                 let cancelled = self.ctx.cancelled();
-                let record = tokio::select! {
+                let mut record = tokio::select! {
                     // UnixInbound has been dropped
                     _ = cancelled => break,
                     record = next_record => match record {
@@ -67,6 +67,8 @@ impl UnixConnection {
                         }
                     }
                 };
+
+                record.set_attribute(Attribute::Inbound, (&self.tag).into());
 
                 match self.sender.send(record) {
                     Ok(_) => (),

@@ -6,6 +6,10 @@ pub use base::Pipe;
 pub use error::{Error, Result};
 
 use crate::config::pipe::PipeConfig;
+pub use timeseries::{
+    LABELS_FIELD, METRIC_TYPE_FIELD, NAME_FIELD,
+    RECORD_TYPE_TIMESERIES_VALUE, TIMESTAMP_FIELD, VALUE_FIELD,
+};
 
 use super::manager::ChannelGraph;
 

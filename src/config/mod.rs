@@ -93,19 +93,21 @@ macro_rules! verify_all {
 
 impl Verify for Config {
     fn verify(&mut self) -> error::Result<()> {
-        // 检查是否为空
+        // skip disabled items
+        self.inbounds.retain(|cfg| !cfg.disabled());
+        self.outbounds.retain(|cfg| !cfg.disabled());
+        self.pipes.retain(|cfg| !cfg.disabled());
+
         check_empty!(self, inbounds, "inbounds is empty");
         check_empty!(self, outbounds, "outbounds is empty");
         check_empty!(self, protocols, "protocols is empty");
         check_empty!(self, pipes, "pipes is empty");
 
-        // 检查重复标签
         check_duplicates!(self, inbounds);
         check_duplicates!(self, outbounds);
         check_duplicates!(self, protocols);
         check_duplicates!(self, pipes);
 
-        // 验证所有项
         verify_all!(self, inbounds);
         verify_all!(self, protocols);
         verify_all!(self, pipes);

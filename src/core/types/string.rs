@@ -42,6 +42,15 @@ pub enum Symbol {
     String(String),
 }
 
+impl Symbol {
+    pub fn new<T>(s: T) -> Self
+    where
+        T: AsRef<str>,
+    {
+        INTERNER.get_or_intern(s)
+    }
+}
+
 impl PartialOrd for Symbol {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match (self, other) {
@@ -134,6 +143,16 @@ impl Interner {
 }
 
 impl Symbol {
+    pub fn intern<T>(str: T) -> Self
+    where
+        T: AsRef<str>,
+    {
+        let s = str.as_ref();
+        let _ = INTERNER_COUNTER.increment(s);
+        let supr = INTERNER.inner().get_or_intern(s);
+        Symbol::Interned(supr)
+    }
+
     pub fn is_empty(&self) -> bool {
         match self {
             Symbol::Interned(_) => resolve(self).is_empty(),
@@ -147,6 +166,7 @@ impl Symbol {
 
     pub fn force_intern(&mut self) {
         if let Symbol::String(s) = self {
+            let _ = INTERNER_COUNTER.increment(&s);
             let spur = INTERNER.inner().get_or_intern(s);
             *self = Symbol::Interned(spur);
         }

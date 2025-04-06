@@ -7,6 +7,12 @@ use crate::core::tag::TagId;
 pub enum Error {
     #[error("Inbound {1} of {0} has been closed")]
     InboundClosed(TagId, TagId),
+    #[error(transparent)]
+    Prometheus(#[from] super::prometheus::Error),
+    #[error("Timeout")]
+    Timeout,
+    #[error(transparent)]
+    Recv(#[from] crate::utils::recv::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

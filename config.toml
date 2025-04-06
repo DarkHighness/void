@@ -12,19 +12,41 @@ protocol = "csv"
 [[outbounds]]
 type = "stdio"
 inbounds = ["pipe:timeseries"]
+disabled = true
+
+[[outbounds]]
+type = "prometheus"
+inbounds = ["pipe:timeseries"]
+address = "env:PROMETHEUS_ADDRESS"
+interval = "100ms"
+auth = { type = "basic", username = "admin", password = "env:PASSWORD" }
 
 [[pipes]]
 type = "timeseries"
 inbounds = ["inbound:unix_socket", "inbound:unix_socket2"]
-values = ["utilization.gpu"]
-labels = ["id"]
+values = ["utilization.gpu", "temperature.gpu", "power.draw", "clocks.gr", "clocks.mem",
+  "clocks_throttle_reasons.hw_slowdown", "clocks_throttle_reasons.hw_thermal_slowdown",
+  "clocks_throttle_reasons.sw_power_cap", "clocks_throttle_reasons.hw_power_brake_slowdown",
+  "clocks_throttle_reasons.gpu_idle", "clocks_throttle_reasons.applications_clocks_setting"]
+labels = ["index"]
 timestamp = "timestamp"
+extra_labels = { job = "void" }
 
 [[protocols]]
 type = "csv"
 has_header = true
 fields = [
-  { name = "id", type = "int" },
+  { name = "index", type = "int" },
   { name = "timestamp", type = "datetime" },
-  { name = "utilization.gpu", type = "float"}
+  { name = "utilization.gpu", type = "float"},
+  { name = "temperature.gpu", type = "float" },
+  { name = "power.draw", type = "float" },
+  { name = "clocks.gr", type = "float" },
+  { name = "clocks.mem", type = "float" },
+  { name = "clocks_throttle_reasons.hw_slowdown", type = "bool" },
+  { name = "clocks_throttle_reasons.hw_thermal_slowdown", type = "bool" },
+  { name = "clocks_throttle_reasons.sw_power_cap", type = "bool" },
+  { name = "clocks_throttle_reasons.hw_power_brake_slowdown", type = "bool" },
+  { name = "clocks_throttle_reasons.gpu_idle", type = "bool" },
+  { name = "clocks_throttle_reasons.applications_clocks_setting", type = "bool" }
 ]

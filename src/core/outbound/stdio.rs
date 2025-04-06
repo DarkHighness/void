@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use futures::stream::StreamExt;
-use tokio::sync::broadcast::error::RecvError;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -10,6 +9,7 @@ use crate::{
         manager::{ChannelGraph, TaggedReceiver},
         tag::{HasTag, TagId},
     },
+    utils::recv::recv_batch,
 };
 
 use super::base::Outbound;
@@ -52,47 +52,38 @@ impl Actor for StdioOutbound {
     type Error = super::Error;
 
     async fn poll(&mut self, ctx: CancellationToken) -> super::Result<()> {
-        let tag = self.tag.clone();
+        let records = match recv_batch(
+            self.inbounds(),
+            std::time::Duration::from_millis(100),
+            16,
+            ctx,
+        )
+        .await
+        {
+            Ok(records) => records,
+            Err(crate::utils::recv::Error::Timeout) => {
+                return Ok(());
+            }
+            Err(e) => return Err(e.into()),
+        };
 
-        let futs = self.inbounds.iter_mut().map(|inbound| {
-            let io = self.io.clone();
-            let ctx = ctx.clone();
-            let tag = tag.clone();
-            let inbound_tag = inbound.tag().clone();
-            let fut = async move {
-                loop {
-                    if ctx.is_cancelled() {
-                        break;
-                    }
-
-                    let msg = match inbound.recv().await {
-                        Ok(msg) => msg,
-                        Err(RecvError::Lagged(_)) => continue,
-                        Err(RecvError::Closed) => {
-                            return Err(super::Error::InboundClosed(tag, inbound_tag));
-                        }
-                    };
-
-                    match io {
-                        Io::Stdout => {
-                            println!("{}", msg);
-                        }
-                        Io::Stderr => {
-                            eprintln!("{}", msg);
-                        }
-                    }
+        for record in records {
+            match self.io {
+                Io::Stdout => {
+                    println!("{}", record);
                 }
-
-                Ok(())
-            };
-
-            fut
-        });
-
-        futures::future::try_join_all(futs).await?;
+                Io::Stderr => {
+                    eprintln!("{}", record);
+                }
+            }
+        }
 
         Ok(())
     }
 }
 
-impl Outbound for StdioOutbound {}
+impl Outbound for StdioOutbound {
+    fn inbounds(&mut self) -> &mut [TaggedReceiver] {
+        &mut self.inbounds
+    }
+}

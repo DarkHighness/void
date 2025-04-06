@@ -6,7 +6,17 @@ use super::{Symbol, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Attribute {
+    Inbound,
     Type,
+}
+
+impl Display for Attribute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Attribute::Type => write!(f, "__type__"),
+            Attribute::Inbound => write!(f, "__inbound__"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -118,15 +128,29 @@ impl Display for Record {
         let mut keys = self.values.keys().cloned().collect::<Vec<_>>();
         keys.sort_by(|a, b| resolve(a).cmp(&resolve(b)));
 
-        let s = keys
-            .into_iter()
-            .map(|key| {
-                let value = self.values.get(&key).unwrap();
-                format!("{}: {}", resolve(&key), value)
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
+        let fields = keys.into_iter().map(|key| {
+            let value = self.values.get(&key).unwrap();
+            format!("\"{}\": {}", resolve(&key), value)
+        });
 
-        write!(f, "Record: [{}]", s)
+        let attrs = self.attributes.keys().cloned().collect::<Vec<_>>();
+        let attrs = attrs.into_iter().map(|key| {
+            let value = self.attributes.get(&key).unwrap();
+            format!("\"{}\": {}", key, value)
+        });
+
+        let r#type = self
+            .get_type()
+            .map(|t| t.to_string())
+            .unwrap_or("Record".to_string());
+
+        let s = fields
+            .chain(attrs)
+            .fold(format!("{} {{", r#type), |acc, field| {
+                format!("{}\n  {},", acc, field)
+            });
+
+        let s = format!("{}\n}}", s);
+        write!(f, "{}", s)
     }
 }

@@ -6,6 +6,7 @@ use super::Verify;
 
 pub use super::{Error, Result};
 
+pub mod auth;
 pub mod prometheus;
 pub mod stdio;
 
@@ -27,7 +28,14 @@ impl HasTag for OutboundConfig {
     }
 }
 
-impl OutboundConfig {}
+impl OutboundConfig {
+    pub fn disabled(&self) -> bool {
+        match self {
+            OutboundConfig::Stdio(cfg) => cfg.disabled,
+            OutboundConfig::Prometheus(cfg) => cfg.disabled,
+        }
+    }
+}
 
 impl Verify for OutboundConfig {
     fn verify(&mut self) -> super::Result<()> {
