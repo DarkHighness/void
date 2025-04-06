@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    ops::Deref,
-};
+use std::{collections::HashMap, ops::Deref};
 
 use async_trait::async_trait;
 use log::{error, info};
@@ -75,7 +72,7 @@ impl TimeseriesActionPipe {
             .get(ACTION_FIELD.deref())
             .ok_or_else(|| super::Error::InvalidRecord("Missing action field".to_string()))?;
 
-        let action = action.as_string()?;
+        let action = action.ensure_string()?;
         let action = action.as_ref();
 
         match action {
@@ -84,7 +81,7 @@ impl TimeseriesActionPipe {
                     .get(NAME_FIELD.deref())
                     .ok_or_else(|| super::Error::InvalidRecord("Missing name field".to_string()))?;
 
-                let name = name.as_string()?.clone();
+                let name = name.ensure_string()?.clone();
 
                 let value = record.get(VALUE_FIELD.deref()).ok_or_else(|| {
                     super::Error::InvalidRecord("Missing value field".to_string())
@@ -106,7 +103,7 @@ impl TimeseriesActionPipe {
                     .get(NAME_FIELD.deref())
                     .ok_or_else(|| super::Error::InvalidRecord("Missing name field".to_string()))?;
 
-                let name = name.as_string()?.clone();
+                let name = name.ensure_string()?.clone();
 
                 info!(
                     "Timeseries {} will no longer set label: {}",
@@ -121,7 +118,7 @@ impl TimeseriesActionPipe {
                     .get(NAME_FIELD.deref())
                     .ok_or_else(|| super::Error::InvalidRecord("Missing name field".to_string()))?;
 
-                let name = name.as_string()?.clone();
+                let name = name.ensure_string()?.clone();
 
                 info!("Timeseries {} will delete label: {}", self.tag(), name);
 
@@ -132,7 +129,7 @@ impl TimeseriesActionPipe {
                     .get(NAME_FIELD.deref())
                     .ok_or_else(|| super::Error::InvalidRecord("Missing name field".to_string()))?;
 
-                let name = name.as_string()?.clone();
+                let name = name.ensure_string()?.clone();
 
                 info!("Timeseries {} will undelete label: {}", self.tag(), name);
 

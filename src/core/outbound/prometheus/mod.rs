@@ -79,7 +79,6 @@ impl Actor for PrometheusOutbound {
         };
 
         let tss = r#type::transform_timeseries(records)?;
-        let len = tss.len();
         let request: WriteRequest = tss.into();
         let request = request.build_request(&self.client, &self.auth, &self.address, "void")?;
 

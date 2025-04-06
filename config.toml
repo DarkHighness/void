@@ -26,10 +26,10 @@ disabled = false
 [[pipes]]
 type = "timeseries"
 inbounds = ["inbound:data"]
-values = ["utilization.gpu", "temperature.gpu", "power.draw", "clocks.gr", "clocks.mem",
-  "clocks_throttle_reasons.hw_slowdown", "clocks_throttle_reasons.hw_thermal_slowdown",
-  "clocks_throttle_reasons.sw_power_cap", "clocks_throttle_reasons.hw_power_brake_slowdown",
-  "clocks_throttle_reasons.gpu_idle", "clocks_throttle_reasons.applications_clocks_setting"]
+# values = ["utilization.gpu", "temperature.gpu", "power.draw", "clocks.gr", "clocks.mem",
+#   "clocks_throttle_reasons.hw_slowdown", "clocks_throttle_reasons.hw_thermal_slowdown",
+#   "clocks_throttle_reasons.sw_power_cap", "clocks_throttle_reasons.hw_power_brake_slowdown",
+#   "clocks_throttle_reasons.gpu_idle", "clocks_throttle_reasons.applications_clocks_setting"]
 labels = ["index"]
 timestamp = "timestamp"
 extra_labels = { job = "void" }

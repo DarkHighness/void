@@ -188,17 +188,17 @@ impl TryFrom<Record> for TimeSeries {
         let metric_type = record
             .get(&METRIC_TYPE_FIELD)
             .ok_or_else(|| super::Error::InvalidRecord("No metric type found".into()))?
-            .as_string()?
+            .ensure_string()?
             .as_ref();
 
         let mut labels = record
             .get(&LABELS_FIELD)
             .ok_or_else(|| super::Error::InvalidRecord("No labels found".into()))?
-            .as_map()?
+            .ensure_map()?
             .iter()
             .map(|(key, value)| {
                 let label = Label {
-                    name: key.as_string()?.as_ref().to_string(),
+                    name: key.ensure_string()?.as_ref().to_string(),
                     value: value.to_string(),
                 };
                 Ok::<_, super::Error>(label)
@@ -209,13 +209,13 @@ impl TryFrom<Record> for TimeSeries {
         let timestamp = record
             .get(&TIMESTAMP_FIELD)
             .ok_or_else(|| super::Error::InvalidRecord("No timestamp found".into()))?
-            .as_datetime()?
+            .ensure_datetime()?
             .timestamp_millis();
 
         let value = record
             .get(&VALUE_FIELD)
             .ok_or_else(|| super::Error::InvalidRecord("No value found".into()))?
-            .as_float()?
+            .ensure_float()?
             .as_ref();
 
         let sample = Sample {

@@ -123,8 +123,6 @@ impl std::ops::Deref for Record {
 
 impl Display for Record {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = String::new();
-
         let mut keys = self.values.keys().cloned().collect::<Vec<_>>();
         keys.sort_by(|a, b| resolve(a).cmp(&resolve(b)));
 

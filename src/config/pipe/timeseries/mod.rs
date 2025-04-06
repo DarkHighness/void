@@ -2,6 +2,7 @@ pub mod action;
 
 pub use super::{Error, Result};
 pub use action::TimeseriesActionPipeConfig;
+use log::warn;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -95,7 +96,10 @@ pub struct TimeseriesPipeConfig {
 
     #[serde(default)]
     pub labels: Vec<Symbol>,
-    pub values: Vec<ValueField>,
+
+    // If the values field is not set, all the fields except the labels and timestamp will be treated as values.
+    #[serde(default)]
+    pub values: Option<Vec<ValueField>>,
 
     // If the timestamp field is not set, the current time will be used.
     #[serde(default)]
@@ -114,12 +118,19 @@ impl Verify for TimeseriesPipeConfig {
             return Err(super::Error::InvalidConfig("inbounds is empty".into()));
         }
 
-        if self.values.is_empty() {
-            return Err(super::Error::InvalidConfig("values is empty".into()));
-        }
-
         if self.labels.is_empty() {
             return Err(super::Error::InvalidConfig("labels is empty".into()));
+        }
+
+        match self.values {
+            Some(ref values) => {
+                if values.is_empty() {
+                    return Err(super::Error::InvalidConfig("values is empty".into()));
+                }
+            }
+            None => {
+                warn!("values is not set, all fields except the labels and timestamp will be treated as values");
+            }
         }
 
         Ok(())

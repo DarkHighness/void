@@ -13,6 +13,8 @@ pub enum Error {
     NonUniqueTimestampZoneMapping(i64),
     #[error("Invalid value type: {0}")]
     InvalidValueType(String),
+    #[error("Unexpected value type, expect {0}, got {1}")]
+    UnexpectedType(&'static str, &'static str),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

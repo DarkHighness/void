@@ -6,7 +6,7 @@ pub use super::{Error, Result};
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use tokio_util::sync::CancellationToken;
 
@@ -27,10 +27,7 @@ pub struct TimeseriesPipe {
     tag: TagId,
 
     label_syms: Vec<Symbol>,
-
-    value_metric_types: HashMap<Symbol, MetricType>,
-
-    value_syms: HashSet<Symbol>,
+    value_syms: Option<HashMap<Symbol, MetricType>>,
 
     timestamp_sym: Option<Symbol>,
     extra_labels: HashMap<Symbol, String>,
@@ -64,17 +61,17 @@ impl TimeseriesPipe {
             .collect::<Vec<_>>();
         let outbound = channels.sender(&tag);
 
-        let value_syms = cfg
-            .values
-            .iter()
-            .map(|field| field.name.clone())
-            .collect::<HashSet<_>>();
+        let value_syms = if let Some(values) = cfg.values {
+            let syms = values
+                .into_iter()
+                .map(|field| (field.name, field.r#type))
+                .collect::<HashMap<_, _>>();
 
-        let value_metric_types = cfg
-            .values
-            .into_iter()
-            .map(|field| (field.name, field.r#type))
-            .collect::<HashMap<_, _>>();
+            Some(syms)
+        } else {
+            // If the values field is not set, all the fields except the labels will be treated as values.
+            None
+        };
 
         let label_syms = cfg
             .labels
@@ -85,7 +82,6 @@ impl TimeseriesPipe {
         Ok(TimeseriesPipe {
             tag,
             label_syms,
-            value_metric_types,
             value_syms,
             timestamp_sym: cfg.timestamp,
             extra_labels: cfg.extra_labels,
@@ -128,9 +124,18 @@ impl TimeseriesPipe {
             })
             .collect::<super::Result<_>>()?;
 
-        let (values, _) = values
-            .into_iter()
-            .partition::<Vec<_>, _>(|(sym, _)| self.value_syms.contains(sym));
+        let (values, _) =
+            values
+                .into_iter()
+                .partition::<Vec<_>, _>(|(sym, _)| match self.value_syms {
+                    Some(ref syms) => syms.contains_key(sym),
+                    None => {
+                        let in_labels = self.label_syms.contains(sym);
+                        let in_timestamp =
+                            self.timestamp_sym.as_ref().map_or(false, |ts| ts == sym);
+                        !in_labels && !in_timestamp
+                    }
+                });
 
         if values.is_empty() {
             return Err(super::Error::InvalidRecord("No values found".into()));
@@ -140,25 +145,27 @@ impl TimeseriesPipe {
         for (name, value) in values {
             let mut new_record = Record::empty();
 
-            let metric_type = self.value_metric_types.get(&name).cloned().unwrap();
+            let metric_type = match self.value_syms {
+                Some(ref syms) => {
+                    if let Some(typ) = syms.get(&name) {
+                        typ.clone()
+                    } else {
+                        return Err(super::Error::InvalidRecord(format!(
+                            "Value {} not found in value syms",
+                            name
+                        )));
+                    }
+                }
+                None => MetricType::default(),
+            };
             let name = ensure_valid_name(name.as_ref())?;
 
             new_record.set(NAME_FIELD.clone(), name.into());
             new_record.set(METRIC_TYPE_FIELD.clone(), Value::String(metric_type.into()));
             new_record.set(TIMESTAMP_FIELD.clone(), timestamp.clone());
 
-            let (unit, value) = match value {
-                Value::Float(mut n) => (n.unit.take(), n.value),
-                Value::Int(mut n) => (n.unit.take(), n.value as f64),
-                Value::Bool(n) => (None, if n { 1.0 } else { 0.0 }),
-                _ => {
-                    return Err(super::Error::InvalidRecord(
-                        "Value is not a number or bool".into(),
-                    ))
-                }
-            };
-
-            let value = value.into();
+            let value = value.cast_float()?;
+            let unit = value.ensure_float()?.unit.clone();
             new_record.set(VALUE_FIELD.clone(), value);
 
             let mut labels = labels.clone();
@@ -215,20 +222,12 @@ impl Actor for TimeseriesPipe {
             Err(e) => return Err(e.into()),
         };
 
-        info!("{}: received {} records", self.tag, records.len());
+        debug!("{}: received {} records", self.tag, records.len());
 
         for record in records {
-            match self.transform(record) {
-                Ok(transformed_records) => {
-                    for record in transformed_records {
-                        if let Err(e) = self.outbound.send(record) {
-                            error!("{}: failed to send record: {:?}", self.tag, e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!("{}: failed to transform record: {:?}", self.tag, e);
-                }
+            let records = self.transform(record)?;
+            for record in records {
+                self.outbound.send(record)?;
             }
         }
 

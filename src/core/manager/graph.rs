@@ -204,8 +204,6 @@ impl ChannelGraph {
             .get_mut(tag)
             .expect("Channel not found in DAG");
 
-        info!("Sender {} has been taken", tag);
-
         channel.sender()
     }
 
@@ -220,7 +218,7 @@ impl ChannelGraph {
         let dst = self.tag_2_idx.get(who).expect("Tag not found in DAG");
 
         self.graph.add_edge(*src, *dst, ());
-        info!("Receiver of {} has been taken by {}", tag, who);
+        info!("Found dataflow {} --> {}", tag, who);
 
         receiver
     }

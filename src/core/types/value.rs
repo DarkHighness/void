@@ -390,108 +390,123 @@ impl Value {
             Value::Float(number) => Ok(Value::String(number.to_string().into())),
             Value::Bool(boolean) => Ok(Value::String(boolean.to_string().into())),
             Value::DateTime(datetime) => Ok(Value::String(datetime.to_rfc3339().into())),
-            _ => Err(super::Error::InvalidValueType(format!(
-                "Cannot cast {} to string",
-                self.type_name()
-            ))),
+            _ => Err(super::Error::UnexpectedType(
+                VALUE_TYPE_STRING,
+                self.type_name(),
+            )),
         }
     }
 
-    pub fn as_string(&self) -> super::Result<&super::string::Symbol> {
+    pub fn cast_float(&self) -> super::Result<Self> {
+        match self {
+            Value::Float(_) => Ok(self.clone()),
+            Value::Int(number) => Ok(Value::Float(number.clone().into())),
+            Value::Bool(boolean) => Ok(Value::Float(Number {
+                value: if *boolean { 1.0 } else { 0.0 },
+                unit: None,
+            })),
+            _ => Err(super::Error::UnexpectedType(
+                VALUE_TYPE_FLOAT,
+                self.type_name(),
+            )),
+        }
+    }
+
+    pub fn ensure_string(&self) -> super::Result<&super::string::Symbol> {
         if let Value::String(string) = self {
             Ok(string)
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a string, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_STRING,
+                self.type_name(),
+            ))
         }
     }
 
-    pub fn as_int(&self) -> super::Result<&Number<i64>> {
+    pub fn ensure_int(&self) -> super::Result<&Number<i64>> {
         if let Value::Int(number) = self {
             Ok(number)
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected an int, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_INT,
+                self.type_name(),
+            ))
         }
     }
 
-    pub fn as_float(&self) -> super::Result<&Number<f64>> {
+    pub fn ensure_float(&self) -> super::Result<&Number<f64>> {
         if let Value::Float(number) = self {
             Ok(number)
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a float, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_FLOAT,
+                self.type_name(),
+            ))
         }
     }
 
-    pub fn as_bool(&self) -> super::Result<bool> {
+    pub fn ensure_bool(&self) -> super::Result<bool> {
         if let Value::Bool(boolean) = self {
             Ok(*boolean)
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a bool, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_BOOL,
+                self.type_name(),
+            ))
         }
     }
 
-    pub fn as_datetime(&self) -> super::Result<&chrono::DateTime<chrono::Utc>> {
+    pub fn ensure_datetime(&self) -> super::Result<&chrono::DateTime<chrono::Utc>> {
         if let Value::DateTime(datetime) = self {
             Ok(datetime)
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a datetime, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_DATETIME,
+                self.type_name(),
+            ))
         }
     }
 
-    pub fn as_map(&self) -> super::Result<&HashMap<Value, Value>> {
+    pub fn ensure_map(&self) -> super::Result<&HashMap<Value, Value>> {
         if let Value::Map(map) = self {
             Ok(map)
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a map, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_MAP,
+                self.type_name(),
+            ))
         }
     }
 
-    pub fn as_map_mut(&mut self) -> super::Result<&mut HashMap<Value, Value>> {
+    pub fn ensure_map_mut(&mut self) -> super::Result<&mut HashMap<Value, Value>> {
         if let Value::Map(map) = self {
             Ok(map)
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a map, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_MAP,
+                self.type_name(),
+            ))
         }
     }
 
-    pub fn as_array(&self) -> super::Result<&Vec<Value>> {
+    pub fn ensure_array(&self) -> super::Result<&Vec<Value>> {
         if let Value::Array(array) = self {
             Ok(array)
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected an array, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_ARRAY,
+                self.type_name(),
+            ))
         }
     }
-    pub fn as_array_mut(&mut self) -> super::Result<&mut Vec<Value>> {
+    pub fn ensure_array_mut(&mut self) -> super::Result<&mut Vec<Value>> {
         if let Value::Array(array) = self {
             Ok(array)
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected an array, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_ARRAY,
+                self.type_name(),
+            ))
         }
     }
 
@@ -500,10 +515,10 @@ impl Value {
             map.insert(key, value);
             Ok(())
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a map, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_MAP,
+                self.type_name(),
+            ))
         }
     }
 
@@ -511,10 +526,10 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(map.get(key))
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a map, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_MAP,
+                self.type_name(),
+            ))
         }
     }
 
@@ -522,10 +537,10 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(map.contains_key(key))
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a map, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_MAP,
+                self.type_name(),
+            ))
         }
     }
 
@@ -533,10 +548,10 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(map.remove(key))
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a map, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_MAP,
+                self.type_name(),
+            ))
         }
     }
 
@@ -544,10 +559,10 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(map.keys().collect())
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a map, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_MAP,
+                self.type_name(),
+            ))
         }
     }
 
@@ -555,10 +570,10 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(map.values().collect())
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a map, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_MAP,
+                self.type_name(),
+            ))
         }
     }
 
@@ -566,10 +581,10 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(map.len())
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a map, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_MAP,
+                self.type_name(),
+            ))
         }
     }
 
@@ -578,10 +593,10 @@ impl Value {
             map.clear();
             Ok(())
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a map, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_MAP,
+                self.type_name(),
+            ))
         }
     }
 
@@ -590,10 +605,10 @@ impl Value {
             array.push(value);
             Ok(())
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected a array, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_ARRAY,
+                self.type_name(),
+            ))
         }
     }
 
@@ -601,10 +616,10 @@ impl Value {
         if let Value::Array(array) = self {
             Ok(array.get(index))
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected an array, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_ARRAY,
+                self.type_name(),
+            ))
         }
     }
 
@@ -612,10 +627,10 @@ impl Value {
         if let Value::Array(array) = self {
             Ok(array.len())
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected an array, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_ARRAY,
+                self.type_name(),
+            ))
         }
     }
 
@@ -627,10 +642,10 @@ impl Value {
                 Ok(None)
             }
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected an array, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_ARRAY,
+                self.type_name(),
+            ))
         }
     }
 
@@ -639,10 +654,10 @@ impl Value {
             array.clear();
             Ok(())
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected an array, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_ARRAY,
+                self.type_name(),
+            ))
         }
     }
 
@@ -650,10 +665,10 @@ impl Value {
         if let Value::Array(array) = self {
             Ok(array.iter())
         } else {
-            Err(super::Error::InvalidValueType(format!(
-                "Expected an array, but got {}",
-                self.type_name()
-            )))
+            Err(super::Error::UnexpectedType(
+                VALUE_TYPE_ARRAY,
+                self.type_name(),
+            ))
         }
     }
 }
@@ -743,16 +758,16 @@ where
     let parts: Vec<&str> = value.split_whitespace().collect();
     match parts.len() {
         1 => {
-            let number = parts[0].parse::<T>().map_err(|_| {
-                super::Error::InvalidNumberFormat(format!("Invalid number format: {}", value))
-            })?;
+            let number = parts[0]
+                .parse::<T>()
+                .map_err(|_| super::Error::InvalidNumberFormat(value.to_string()))?;
 
             Ok(number.into())
         }
         2 => {
-            let number = parts[0].parse::<T>().map_err(|_| {
-                super::Error::InvalidNumberFormat(format!("Invalid number format: {}", value))
-            })?;
+            let number = parts[0]
+                .parse::<T>()
+                .map_err(|_| super::Error::InvalidNumberFormat(value.to_string()))?;
 
             let unit = parts[1].to_string();
             let number = Number::new_with_unit(number, unit);
