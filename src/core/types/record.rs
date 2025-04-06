@@ -113,15 +113,19 @@ impl std::ops::Deref for Record {
 
 impl Display for Record {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut s = String::new();
+        let s = String::new();
 
         let mut keys = self.values.keys().cloned().collect::<Vec<_>>();
         keys.sort_by(|a, b| resolve(a).cmp(&resolve(b)));
 
-        for key in keys {
-            let value = self.values.get(&key).unwrap();
-            s.push_str(&format!("{}: {}, ", resolve(&key), value));
-        }
+        let s = keys
+            .into_iter()
+            .map(|key| {
+                let value = self.values.get(&key).unwrap();
+                format!("{}: {}", resolve(&key), value)
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
 
         write!(f, "Record: [{}]", s)
     }

@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt::Display, str::FromStr};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    str::FromStr,
+};
 
 use chrono::TimeZone;
 use serde::{Deserialize, Serialize};
@@ -86,6 +90,50 @@ impl Hash for Number<f64> {
 
 impl Eq for Number<i64> {}
 impl Eq for Number<f64> {}
+
+impl PartialOrd for Number<i64> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.value.partial_cmp(&other.value)
+    }
+}
+
+impl PartialOrd for Number<f64> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.value.partial_cmp(&other.value)
+    }
+}
+
+impl Ord for Number<i64> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl Ord for Number<f64> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value
+            .partial_cmp(&other.value)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }
+}
+
+impl From<Number<i64>> for Number<f64> {
+    fn from(number: Number<i64>) -> Self {
+        Number {
+            value: number.value as f64,
+            unit: number.unit,
+        }
+    }
+}
+
+impl From<Number<f64>> for Number<i64> {
+    fn from(number: Number<f64>) -> Self {
+        Number {
+            value: number.value as i64,
+            unit: number.unit,
+        }
+    }
+}
 
 /*
 1. If the unit is not present, it will be serialized as a number.
@@ -245,6 +293,19 @@ impl From<Vec<Value>> for Value {
     }
 }
 
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Value::String(a), Value::String(b)) => a.partial_cmp(b),
+            (Value::Int(a), Value::Int(b)) => a.partial_cmp(b),
+            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b),
+            (Value::Bool(a), Value::Bool(b)) => a.partial_cmp(b),
+            (Value::DateTime(a), Value::DateTime(b)) => a.partial_cmp(b),
+            _ => None,
+        }
+    }
+}
+
 impl Value {
     pub fn is_null(&self) -> bool {
         matches!(self, Value::Null)
@@ -280,6 +341,121 @@ impl Value {
 
     pub fn is_array(&self) -> bool {
         matches!(self, Value::Array(_))
+    }
+
+    pub fn map_set(&mut self, key: Value, value: Value) -> super::Result<()> {
+        if let Value::Map(map) = self {
+            map.insert(key, value);
+            Ok(())
+        } else {
+            Err(super::Error::InvalidValueType("Expected a map".to_string()))
+        }
+    }
+
+    pub fn map_get(&self, key: &Value) -> super::Result<Option<&Value>> {
+        if let Value::Map(map) = self {
+            Ok(map.get(key))
+        } else {
+            Err(super::Error::InvalidValueType("Expected a map".to_string()))
+        }
+    }
+
+    pub fn map_contains_key(&self, key: &Value) -> super::Result<bool> {
+        if let Value::Map(map) = self {
+            Ok(map.contains_key(key))
+        } else {
+            Err(super::Error::InvalidValueType("Expected a map".to_string()))
+        }
+    }
+
+    pub fn map_remove(&mut self, key: &Value) -> super::Result<Option<Value>> {
+        if let Value::Map(map) = self {
+            Ok(map.remove(key))
+        } else {
+            Err(super::Error::InvalidValueType("Expected a map".to_string()))
+        }
+    }
+
+    pub fn map_keys(&self) -> super::Result<Vec<&Value>> {
+        if let Value::Map(map) = self {
+            Ok(map.keys().collect())
+        } else {
+            Err(super::Error::InvalidValueType("Expected a map".to_string()))
+        }
+    }
+
+    pub fn map_values(&self) -> super::Result<Vec<&Value>> {
+        if let Value::Map(map) = self {
+            Ok(map.values().collect())
+        } else {
+            Err(super::Error::InvalidValueType("Expected a map".to_string()))
+        }
+    }
+
+    pub fn array_push(&mut self, value: Value) -> super::Result<()> {
+        if let Value::Array(array) = self {
+            array.push(value);
+            Ok(())
+        } else {
+            Err(super::Error::InvalidValueType(
+                "Expected an array".to_string(),
+            ))
+        }
+    }
+
+    pub fn array_get(&self, index: usize) -> super::Result<Option<&Value>> {
+        if let Value::Array(array) = self {
+            Ok(array.get(index))
+        } else {
+            Err(super::Error::InvalidValueType(
+                "Expected an array".to_string(),
+            ))
+        }
+    }
+
+    pub fn array_len(&self) -> super::Result<usize> {
+        if let Value::Array(array) = self {
+            Ok(array.len())
+        } else {
+            Err(super::Error::InvalidValueType(
+                "Expected an array".to_string(),
+            ))
+        }
+    }
+
+    pub fn array_remove(&mut self, index: usize) -> super::Result<Option<Value>> {
+        if let Value::Array(array) = self {
+            if index < array.len() {
+                Ok(Some(array.remove(index)))
+            } else {
+                Ok(None)
+            }
+        } else {
+            Err(super::Error::InvalidValueType(
+                "Expected an array".to_string(),
+            ))
+        }
+    }
+
+    pub fn array_clear(&mut self) -> super::Result<()> {
+        if let Value::Array(array) = self {
+            array.clear();
+            Ok(())
+        } else {
+            Err(super::Error::InvalidValueType(
+                "Expected an array".to_string(),
+            ))
+        }
+    }
+
+    pub fn array_iter(&self) -> super::Result<std::slice::Iter<Value>> {
+        if let Value::Array(array) = self {
+            Ok(array.iter())
+        } else {
+            Err(super::Error::InvalidValueType(
+                "Expected an array".to_string(),
+            ))
+        }
     }
 }
 
@@ -335,11 +511,11 @@ impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::Null => write!(f, "null"),
-            Value::String(string) => write!(f, "{}", string),
+            Value::String(string) => write!(f, "\"{}\"", string),
             Value::Int(number) => write!(f, "{}", number.to_string()),
             Value::Float(number) => write!(f, "{}", number.to_string()),
             Value::Bool(boolean) => write!(f, "{}", boolean),
-            Value::DateTime(datetime) => write!(f, "{}", datetime),
+            Value::DateTime(datetime) => write!(f, "\"{}\"", datetime),
             Value::Map(map) => {
                 let map_str = map
                     .iter()

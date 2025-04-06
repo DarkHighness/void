@@ -42,6 +42,23 @@ pub enum Symbol {
     String(String),
 }
 
+impl PartialOrd for Symbol {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Symbol::Interned(spur1), Symbol::Interned(spur2)) => spur1.partial_cmp(spur2),
+            (Symbol::String(s1), Symbol::String(s2)) => s1.partial_cmp(s2),
+            (Symbol::Interned(spur), Symbol::String(s)) => {
+                let str = INTERNER.resolve(&Symbol::Interned(*spur));
+                str.as_bytes().partial_cmp(s.as_bytes())
+            }
+            (Symbol::String(s), Symbol::Interned(spur)) => {
+                let str = INTERNER.resolve(&Symbol::Interned(*spur));
+                s.as_bytes().partial_cmp(str.as_bytes())
+            }
+        }
+    }
+}
+
 impl PartialEq for Symbol {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -49,11 +66,11 @@ impl PartialEq for Symbol {
             (Symbol::String(s1), Symbol::String(s2)) => s1 == s2,
             (Symbol::Interned(spur), Symbol::String(s)) => {
                 let str = INTERNER.resolve(&Symbol::Interned(*spur));
-                str == s.as_str()
+                str.as_bytes() == s.as_bytes()
             }
             (Symbol::String(s), Symbol::Interned(spur)) => {
                 let str = INTERNER.resolve(&Symbol::Interned(*spur));
-                s.as_str() == str
+                s.as_bytes() == str.as_bytes()
             }
         }
     }

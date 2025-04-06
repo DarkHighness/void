@@ -11,6 +11,8 @@ pub enum Error {
     UnknownDatetimeFormat(String),
     #[error("Non-unique timestamp zone mapping: {0}")]
     NonUniqueTimestampZoneMapping(i64),
+    #[error("Invalid value type: {0}")]
+    InvalidValueType(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

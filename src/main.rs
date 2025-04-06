@@ -24,7 +24,11 @@ fn setup_logger() -> std::result::Result<(), fern::InitError> {
             let now = now.strftime("%Y-%m-%d %H:%M:%S");
 
             let target = record.target();
-            let target = target.replacen("void", "app", 1);
+            let mut target = target.replacen("void", "app", 1);
+            if let Some(line) = record.line() {
+                target = format!("{}:{}", target, line);
+            }
+            let target = target;
 
             if use_color {
                 out.finish(format_args!(

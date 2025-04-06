@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use futures::{stream::FuturesUnordered, StreamExt};
-use log::{info, warn};
+use log::warn;
 use once_cell::sync::Lazy;
 use tokio::sync::broadcast::error::RecvError;
 use tokio_util::sync::CancellationToken;
@@ -29,6 +29,8 @@ pub struct TimeseriesPipe {
 
     inbounds: Vec<TaggedReceiver>,
     outbound: TaggedSender,
+
+    lagged_inbound_index: Option<(usize, u64)>,
 }
 
 pub static RECORD_TYPE_TIMESERIES: Lazy<Symbol> = Lazy::new(|| Symbol::from("TimeseriesRecord"));
@@ -57,6 +59,7 @@ impl TimeseriesPipe {
             extra_labels: cfg.extra_labels,
             inbounds,
             outbound,
+            lagged_inbound_index: None,
         })
     }
 
@@ -93,14 +96,32 @@ impl TimeseriesPipe {
         let mut new_records = Vec::new();
         for (name, value) in values {
             let mut new_record = Record::empty();
+
             new_record.set("name".into(), name.into());
-            new_record.set("labels".into(), labels.clone());
-            new_record.set("value".into(), value);
             new_record.set("timestamp".into(), timestamp.clone());
+
+            let (unit, value) = match value {
+                Value::Float(mut n) => (n.unit.take(), n.value),
+                Value::Int(mut n) => (n.unit.take(), n.value as f64),
+                _ => return Err(super::Error::InvalidRecord("Value is not a number".into())),
+            };
+
+            let value = value.into();
+            new_record.set("value".into(), value);
+
+            let mut labels = labels.clone();
+            match unit {
+                Some(unit) => labels.map_set("unit".into(), unit.into())?,
+                None => {}
+            };
+            new_record.set("labels".into(), labels);
+
             for (key, value) in &self.extra_labels {
                 new_record.set(key.clone(), value.clone().into());
             }
+
             new_record.set_attribute(Attribute::Type, RECORD_TYPE_TIMESERIES_VALUE.clone());
+
             new_records.push(new_record);
         }
 
@@ -109,11 +130,89 @@ impl TimeseriesPipe {
             return Err(super::Error::InvalidRecord("No values found".into()));
         }
 
-        for record in &new_records {
-            info!("TimeSeries: {}", record);
-        }
-
         Ok(new_records)
+    }
+
+    async fn next_record(&mut self, ctx: CancellationToken) -> super::Result<Record> {
+        // Try to receive from the lagged inbound channel first.
+        loop {
+            if let Some((index, count)) = self.lagged_inbound_index.take() {
+                match self.try_receive_from_lagged(index, count).await {
+                    Ok(Some(record)) => return Ok(record),
+                    Ok(None) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+
+            let mut futures = FuturesUnordered::new();
+            for (i, rx) in self.inbounds.iter_mut().enumerate() {
+                let tag = rx.tag().clone();
+
+                futures.push(async move {
+                    match rx.recv().await {
+                        Ok(record) => Ok((i, record)),
+                        Err(RecvError::Closed) => Err(super::Error::InboundRecvError(format!(
+                            "Inbound channel {} closed",
+                            tag
+                        ))),
+                        Err(RecvError::Lagged(n)) => Err(super::Error::ChannelLagged(i, n)),
+                    }
+                });
+            }
+
+            let tag = self.tag.clone();
+            if let Some(result) = futures.next().await {
+                match result {
+                    Ok((_, record)) => return Ok(record),
+                    Err(super::Error::ChannelLagged(index, n)) => {
+                        warn!("{}: inbound {} lagged {}", &tag, index, n);
+                        self.lagged_inbound_index = Some((index, n));
+
+                        // Retry
+                        continue;
+                    }
+                    Err(e) => return Err(e),
+                }
+            } else {
+                return Err(super::Error::AllInboundsClosed(tag));
+            };
+        }
+    }
+
+    async fn try_receive_from_lagged(
+        &mut self,
+        index: usize,
+        count: u64,
+    ) -> super::Result<Option<Record>> {
+        let rx = self
+            .inbounds
+            .get_mut(index)
+            .expect("inbound index out of bounds");
+
+        let tag = rx.tag().clone();
+
+        tokio::select! {
+            record = rx.recv() => match record {
+                Ok(record) => {
+                    if count > 0 {
+                        self.lagged_inbound_index = Some((index, count - 1));
+                    }
+                    Ok(Some(record))
+                },
+                Err(RecvError::Closed) => {
+                    Err(super::Error::InboundRecvError(format!("Channel {} closed", tag)))
+                },
+                Err(RecvError::Lagged(n)) => {
+                    warn!("{}: inbound {} lagged additional {}", self.tag, index, n);
+                    self.lagged_inbound_index = Some((index, count + n));
+                    Ok(None)
+                }
+            },
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                self.lagged_inbound_index = None;
+                Ok(None)
+            }
+        }
     }
 }
 
@@ -127,30 +226,7 @@ impl HasTag for TimeseriesPipe {
 impl Actor for TimeseriesPipe {
     type Error = super::Error;
     async fn poll(&mut self, ctx: CancellationToken) -> super::Result<()> {
-        let inbounds = self
-            .inbounds
-            .iter_mut()
-            .map(|rx| Box::pin(rx.recv()))
-            .collect::<Vec<_>>();
-
-        // Wait for any of the inbounds to receive a record.
-        let (record, index, _) = futures::future::select_all(inbounds).await;
-
-        info!("{:?}", record);
-
-        let record = match record {
-            Ok(record) => self.transform(record),
-            Err(e) => match e {
-                RecvError::Closed => {
-                    self.inbounds.remove(index);
-                    return Ok(());
-                }
-                RecvError::Lagged(n) => {
-                    warn!("{}: inbound lagged {}", self.tag, n);
-                    return Ok(());
-                }
-            },
-        };
+        let record = self.next_record(ctx).await;
 
         let record = match record {
             Ok(record) => record,
@@ -160,7 +236,12 @@ impl Actor for TimeseriesPipe {
             }
         };
 
-        info!("{}: received record: {:?}", self.tag, record);
+        let records = self.transform(record)?;
+        for record in records {
+            if let Err(e) = self.outbound.send(record) {
+                warn!("{}: failed to send record: {:?}", self.tag, e);
+            }
+        }
 
         Ok(())
     }

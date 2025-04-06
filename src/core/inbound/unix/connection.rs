@@ -1,4 +1,4 @@
-use log::{error, info, warn};
+use log::{error, warn};
 use tokio::{
     net::{unix::SocketAddr, UnixStream},
     sync::broadcast,
