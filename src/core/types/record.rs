@@ -152,3 +152,119 @@ impl Display for Record {
         write!(f, "{}", s)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::types::Value;
+
+    #[test]
+    fn test_empty_record() {
+        let record = Record::empty();
+        assert_eq!(record.values.len(), 0);
+        assert_eq!(record.attributes.len(), 0);
+    }
+
+    #[test]
+    fn test_record_set_get() {
+        let mut record = Record::empty();
+        let key = Symbol::from("test_key");
+        let value = Value::String(Symbol::from("test_value"));
+
+        record.set(key.clone(), value.clone());
+
+        assert_eq!(record.get(&key), Some(&value));
+    }
+
+    #[test]
+    fn test_record_attributes() {
+        let mut record = Record::empty();
+        let value = Value::String(Symbol::from("test_type"));
+
+        record.set_attribute(Attribute::Type, value.clone());
+
+        assert_eq!(record.get_attribute(&Attribute::Type), Some(&value));
+        assert_eq!(record.get_type(), Some(&value));
+    }
+
+    #[test]
+    fn test_record_attribute_overwrite() {
+        let mut record = Record::empty();
+        let value1 = Value::String(Symbol::from("value1"));
+        let value2 = Value::String(Symbol::from("value2"));
+
+        record.set_attribute(Attribute::Type, value1.clone());
+        record.set_attribute_overwrite(Attribute::Type, value2.clone(), false);
+        assert_eq!(record.get_attribute(&Attribute::Type), Some(&value1));
+
+        record.set_attribute_overwrite(Attribute::Type, value2.clone(), true);
+        assert_eq!(record.get_attribute(&Attribute::Type), Some(&value2));
+    }
+
+    #[test]
+    fn test_from_hashmap() {
+        let mut values = HashMap::new();
+        let key = Symbol::from("test_key");
+        let value = Value::String(Symbol::from("test_value"));
+        values.insert(key.clone(), value.clone());
+
+        let record = Record::from(values);
+
+        assert_eq!(record.get(&key), Some(&value));
+    }
+
+    #[test]
+    fn test_from_iterator() {
+        let key = Symbol::from("test_key");
+        let value = Value::String(Symbol::from("test_value"));
+        let pairs = vec![(key.clone(), value.clone())];
+
+        let record = Record::from_iter(pairs);
+
+        assert_eq!(record.get(&key), Some(&value));
+    }
+
+    #[test]
+    fn test_index_operator() {
+        let mut record = Record::empty();
+        let key = Symbol::from("test_key");
+        let value = Value::String(Symbol::from("test_value"));
+
+        record.set(key.clone(), value.clone());
+
+        assert_eq!(record[&key], value);
+    }
+
+    #[test]
+    fn test_deref() {
+        let mut record = Record::empty();
+        let key = Symbol::from("test_key");
+        let value = Value::String(Symbol::from("test_value"));
+
+        record.set(key.clone(), value.clone());
+
+        assert_eq!(record.len(), 1);
+        assert!(record.contains_key(&key));
+    }
+
+    #[test]
+    fn test_display() {
+        let mut record = Record::empty();
+        let key = Symbol::from("name");
+        let value = Value::String(Symbol::from("test"));
+
+        record.set(key, value);
+        record.set_attribute(Attribute::Type, Value::String(Symbol::from("Person")));
+
+        let displayed = record.to_string();
+        assert!(displayed.contains("Person {"));
+        assert!(displayed.contains("\"name\": test"));
+        assert!(displayed.contains("\"__type__\": Person"));
+    }
+
+    #[test]
+    fn test_attribute_display() {
+        assert_eq!(Attribute::Type.to_string(), "__type__");
+        assert_eq!(Attribute::Inbound.to_string(), "__inbound__");
+    }
+}

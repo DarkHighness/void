@@ -158,11 +158,11 @@ impl TimeseriesActionPipe {
             .ok_or_else(|| super::Error::InvalidRecord("Missing labels field".to_string()))?;
 
         for (label, value) in &self.labels_to_add {
-            labels.map_set(label.into(), value.clone())?;
+            labels.map_set(label.clone().into(), value.clone())?;
         }
 
         for label in &self.labels_to_remove {
-            let label: Value = label.into();
+            let label: Value = label.clone().into();
             labels.map_remove(&label)?;
         }
 

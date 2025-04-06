@@ -118,7 +118,7 @@ where
 
         loop {
             let bytes_read = self.reader.read_buf(&mut self.input_buf).await?;
-            if bytes_read == 0 {
+            if bytes_read == 0 && self.input_buf.is_empty() {
                 return Err(super::Error::EOF);
             }
 
@@ -151,5 +151,205 @@ where
                 ReadRecordResult::End => unreachable!(),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use crate::config::protocol::csv::{CSVField, CSVProtocolConfig};
+    use crate::config::Verify;
+    use crate::core::protocol::ProtocolParser;
+    use crate::core::tag::{TagId, PROTOCOL_TAG_SCOPE};
+    use crate::core::types::intern;
+    use crate::core::types::{DataType, Symbol, Value};
+
+    use super::*;
+
+    fn create_test_config() -> CSVProtocolConfig {
+        let mut cfg = CSVProtocolConfig {
+            tag: TagId::new(PROTOCOL_TAG_SCOPE, "csv").into(),
+            delimiter: ',',
+            has_header: true,
+            num_fields: 3,
+            fields: vec![
+                CSVField {
+                    index: 0,
+                    name: Symbol::new("name"),
+                    r#type: DataType::String,
+                    optional: false,
+                },
+                CSVField {
+                    index: 1,
+                    name: Symbol::new("age"),
+                    r#type: DataType::Int,
+                    optional: false,
+                },
+                CSVField {
+                    index: 2,
+                    name: Symbol::new("active"),
+                    r#type: DataType::Bool,
+                    optional: false,
+                },
+            ],
+        };
+
+        cfg.verify().expect("Invalid config");
+        cfg
+    }
+
+    #[tokio::test]
+    async fn test_basic_csv_parsing() {
+        let data = "name,age,active\nAlice,30,true\nBob,25,false\n";
+        let reader = Cursor::new(data);
+
+        let mut parser = CSVProtocol::try_create_from(reader, create_test_config()).unwrap();
+
+        // First record
+        let record = parser.read_next().await.unwrap();
+        assert_eq!(record.len(), 3);
+        assert_eq!(
+            record.get(&Symbol::new("name")).unwrap(),
+            &Value::String(intern("Alice"))
+        );
+        assert_eq!(
+            record
+                .get(&Symbol::new("age"))
+                .unwrap()
+                .ensure_int()
+                .unwrap()
+                .value,
+            30
+        );
+        assert_eq!(
+            record
+                .get(&Symbol::new("active"))
+                .unwrap()
+                .ensure_bool()
+                .unwrap(),
+            true
+        );
+
+        // Second record
+        let record = parser.read_next().await.unwrap();
+        assert_eq!(record.len(), 3);
+        assert_eq!(
+            record.get(&Symbol::new("name")).unwrap(),
+            &Value::String(intern("Bob"))
+        );
+        assert_eq!(
+            record
+                .get(&Symbol::new("age"))
+                .unwrap()
+                .ensure_int()
+                .unwrap()
+                .value,
+            25
+        );
+        assert_eq!(
+            record
+                .get(&Symbol::new("active"))
+                .unwrap()
+                .ensure_bool()
+                .unwrap(),
+            false
+        );
+
+        // No more records
+        assert!(parser.read_next().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_no_header() {
+        let data = "Alice,30,true\nBob,25,false\n";
+        let mut config = create_test_config();
+        config.has_header = false;
+
+        let reader = Cursor::new(data);
+        let mut parser = CSVProtocol::try_create_from(reader, config).unwrap();
+
+        // First record
+        let record = parser.read_next().await.unwrap();
+        assert_eq!(record.len(), 3);
+        assert_eq!(
+            record.get(&Symbol::new("name")).unwrap(),
+            &Value::String(intern("Alice"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_optional_fields() {
+        let data = "name,age,active\nAlice,30\nBob\n";
+        let mut config = create_test_config();
+        config.fields[1].optional = true; // age is optional
+        config.fields[2].optional = true; // active is optional
+
+        let reader = Cursor::new(data);
+        let mut parser = CSVProtocol::try_create_from(reader, config).unwrap();
+
+        // First record (missing active)
+        let record = parser.read_next().await.unwrap();
+        assert_eq!(record.len(), 2);
+        assert!(record.contains_key(&Symbol::new("name")));
+        assert!(record.contains_key(&Symbol::new("age")));
+        assert!(!record.contains_key(&Symbol::new("active")));
+
+        // Second record (missing active and age)
+        let record = parser.read_next().await.unwrap();
+        assert_eq!(record.len(), 1);
+        assert!(record.contains_key(&Symbol::new("name")));
+        assert!(!record.contains_key(&Symbol::new("age")));
+        assert!(!record.contains_key(&Symbol::new("active")));
+    }
+
+    #[tokio::test]
+    async fn test_different_delimiter() {
+        let data = "name;age;active\nAlice;30;true\nBob;25;false\n";
+        let mut config = create_test_config();
+        config.delimiter = ';';
+
+        let reader = Cursor::new(data);
+        let mut parser = CSVProtocol::try_create_from(reader, config).unwrap();
+
+        // First record
+        let record = parser.read_next().await.unwrap();
+        assert_eq!(record.len(), 3);
+        assert_eq!(
+            record.get(&Symbol::new("name")).unwrap(),
+            &Value::String(intern("Alice"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_errors() {
+        let data = "name,age,active\nAlice,not_a_number,true\n";
+        let reader = Cursor::new(data);
+        let mut parser = CSVProtocol::try_create_from(reader, create_test_config()).unwrap();
+
+        // Parsing should fail because "not_a_number" is not an integer
+        let result = parser.read_next().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_large_input() {
+        // Generate a large CSV with 1000 rows
+        let mut data = String::from("name,age,active\n");
+        for i in 0..1000 {
+            data.push_str(&format!("Person{},{},{}\n", i, i, i % 2 == 0));
+        }
+
+        let reader = Cursor::new(data);
+        let mut parser = CSVProtocol::try_create_from(reader, create_test_config()).unwrap();
+
+        // Read all records
+        let mut count = 0;
+        while let Ok(record) = parser.read_next().await {
+            assert_eq!(record.len(), 3);
+            count += 1;
+        }
+
+        assert_eq!(count, 1000);
     }
 }

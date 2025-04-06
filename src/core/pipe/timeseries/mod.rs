@@ -3,10 +3,10 @@ pub mod action;
 pub use action::TimeseriesActionPipe;
 
 pub use super::{Error, Result};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
-use log::{debug, error, info, warn};
+use log::{debug, warn};
 use once_cell::sync::Lazy;
 use tokio_util::sync::CancellationToken;
 
@@ -175,7 +175,7 @@ impl TimeseriesPipe {
             };
 
             for (key, value) in &self.extra_labels {
-                labels.map_set(key.into(), value.as_str().into())?;
+                labels.map_set(key.clone().into(), value.as_str().into())?;
             }
             new_record.set(LABELS_FIELD.clone(), labels);
 

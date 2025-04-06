@@ -7,5 +7,6 @@ mod value;
 pub use error::{Error, Result};
 pub use r#type::DataType;
 pub use record::{Attribute, Record};
-pub use string::{num_interned_strings, resolve, Symbol};
+#[allow(unused_imports)]
+pub use string::{intern, num_interned_strings, resolve, Symbol};
 pub use value::{parse_value, Value};

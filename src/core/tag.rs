@@ -103,6 +103,12 @@ macro_rules! impl_serde_for_scoped_tag_id {
                 &self.0
             }
         }
+
+        impl From<TagId> for $tag_id {
+            fn from(tag_id: TagId) -> Self {
+                Self(tag_id)
+            }
+        }
     };
 }
 

@@ -268,3 +268,132 @@ where
 pub fn num_interned_strings() -> usize {
     INTERNER.len()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn test_symbol_creation() {
+        let s1 = Symbol::new("hello");
+        let s2 = Symbol::new("hello");
+        let s3 = Symbol::new("world");
+
+        assert_eq!(s1, s2);
+        assert_ne!(s1, s3);
+        assert_eq!(s1.to_string(), "hello");
+        assert_eq!(s3.to_string(), "world");
+    }
+
+    #[test]
+    fn test_symbol_interning() {
+        let s = Symbol::new("test_interning");
+        assert!(!s.is_interned());
+
+        let mut s = Symbol::new("force_intern_test");
+        assert!(!s.is_interned());
+        s.force_intern();
+        assert!(s.is_interned());
+    }
+
+    #[test]
+    fn test_interning_threshold() {
+        let test_string = "threshold_test";
+
+        let mut symbols = Vec::new();
+        for _ in 0..INTERN_THRESHOLD - 1 {
+            symbols.push(Symbol::new(test_string));
+        }
+
+        assert!(!symbols.last().unwrap().is_interned());
+
+        let s_threshold = Symbol::new(test_string);
+        assert!(s_threshold.is_interned());
+    }
+
+    #[test]
+    fn test_resolve() {
+        let s1 = Symbol::new("hello");
+        let s2 = Symbol::intern("world");
+
+        assert_eq!(resolve(&s1), "hello");
+        assert_eq!(resolve(&s2), "world");
+    }
+
+    #[test]
+    fn test_symbol_equality() {
+        let interned = Symbol::intern("same_value");
+        let string = Symbol::String("same_value".to_string());
+
+        assert_eq!(interned, string);
+
+        let interned1 = Symbol::intern("value1");
+        let interned2 = Symbol::intern("value2");
+        assert_ne!(interned1, interned2);
+    }
+
+    #[test]
+    fn test_symbol_clone() {
+        let s1 = Symbol::new("clone_test");
+        let s2 = s1.clone();
+
+        assert_eq!(s1, s2);
+
+        let common = "common_string";
+        let mut symbols = Vec::new();
+        for _ in 0..INTERN_THRESHOLD {
+            let s = Symbol::new(common);
+            symbols.push(s.clone());
+        }
+
+        let latest = Symbol::new(common);
+        assert!(latest.is_interned());
+    }
+
+    #[test]
+    fn test_symbol_from_conversions() {
+        let s1: Symbol = "hello".into();
+        let s2: Symbol = "hello".to_string().into();
+
+        assert_eq!(s1, s2);
+        assert_eq!(s1.as_ref(), "hello");
+    }
+
+    #[test]
+    fn test_symbol_serialization() {
+        let s = Symbol::new("serialize_test");
+        let serialized = serde_json::to_string(&s).unwrap();
+        let deserialized: Symbol = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(s, deserialized);
+    }
+
+    #[test]
+    fn test_symbol_empty() {
+        let empty1 = Symbol::new("");
+        let empty2 = Symbol::String(String::new());
+
+        assert!(empty1.is_empty());
+        assert!(empty2.is_empty());
+
+        let non_empty = Symbol::new("content");
+        assert!(!non_empty.is_empty());
+    }
+
+    #[test]
+    fn test_symbol_partial_order() {
+        let s1 = Symbol::new("aaa");
+        let s2 = Symbol::new("bbb");
+
+        assert!(s1 < s2);
+        assert!(s2 > s1);
+
+        let s3 = Symbol::intern("aaa");
+        let s4 = Symbol::intern("bbb");
+
+        assert!(s3 < s4);
+        assert!(s3 == s1);
+        assert!(s4 == s2);
+    }
+}
