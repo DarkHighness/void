@@ -1,9 +1,11 @@
 pub mod annotate;
 
 pub use annotate::TimeseriesAnnotatePipe;
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use tokio::task::JoinHandle;
 
 pub use super::{Error, Result};
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use log::{debug, warn};
@@ -11,7 +13,11 @@ use once_cell::sync::Lazy;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::pipe::timeseries::{MetricType, TimeseriesPipeConfig},
+    config::{
+        global::use_serial_mode,
+        outbound,
+        pipe::timeseries::{MetricType, TimeseriesPipeConfig},
+    },
     core::{
         actor::Actor,
         manager::{ChannelGraph, TaggedReceiver, TaggedSender},
@@ -23,83 +29,33 @@ use crate::{
 
 use super::Pipe;
 
-pub struct TimeseriesPipe {
+#[derive(Debug)]
+struct InnerState {
     tag: TagId,
-
     label_syms: Vec<Symbol>,
     value_syms: Option<HashMap<Symbol, MetricType>>,
-
     timestamp_sym: Option<Symbol>,
     extra_labels: HashMap<Symbol, String>,
-
-    inbounds: Vec<TaggedReceiver>,
     outbound: TaggedSender,
-
-    interval: Duration,
-    buffer_size: usize,
 }
 
-pub static RECORD_TYPE_TIMESERIES: Lazy<Symbol> = Lazy::new(|| Symbol::intern("TimeseriesRecord"));
-
-pub static RECORD_TYPE_TIMESERIES_VALUE: Lazy<Value> =
-    Lazy::new(|| Value::from(RECORD_TYPE_TIMESERIES.as_ref()));
-
-pub const NAME_FIELD_STR: &str = "name";
-pub const TIMESTAMP_FIELD_STR: &str = "timestamp";
-pub const METRIC_TYPE_FIELD_STR: &str = "metric_type";
-pub const LABELS_FIELD_STR: &str = "labels";
-pub const VALUE_FIELD_STR: &str = "value";
-pub const UNIT_FIELD_STR: &str = "unit";
-
-pub static NAME_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(NAME_FIELD_STR));
-pub static TIMESTAMP_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(TIMESTAMP_FIELD_STR));
-pub static METRIC_TYPE_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(METRIC_TYPE_FIELD_STR));
-pub static LABELS_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(LABELS_FIELD_STR));
-pub static VALUE_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(VALUE_FIELD_STR));
-pub static UNIT_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(UNIT_FIELD_STR));
-
-impl TimeseriesPipe {
-    pub fn try_create_from(
-        cfg: TimeseriesPipeConfig,
-        channels: &mut ChannelGraph,
-    ) -> super::Result<Self> {
-        let tag = cfg.tag.into();
-        let inbounds = cfg
-            .inbounds
-            .iter()
-            .map(|inbound| channels.recv_from(inbound, &tag))
-            .collect::<Vec<_>>();
-        let outbound = channels.sender(&tag);
-
-        let value_syms = if let Some(values) = cfg.values {
-            let syms = values
-                .into_iter()
-                .map(|field| (field.name, field.r#type))
-                .collect::<HashMap<_, _>>();
-
-            Some(syms)
-        } else {
-            // If the values field is not set, all the fields except the labels will be treated as values.
-            None
-        };
-
-        let label_syms = cfg
-            .labels
-            .into_iter()
-            .map(|label| label.clone())
-            .collect::<Vec<_>>();
-
-        Ok(TimeseriesPipe {
+impl InnerState {
+    fn new(
+        tag: TagId,
+        label_syms: Vec<Symbol>,
+        value_syms: Option<HashMap<Symbol, MetricType>>,
+        timestamp_sym: Option<Symbol>,
+        extra_labels: HashMap<Symbol, String>,
+        outbound: TaggedSender,
+    ) -> Self {
+        InnerState {
             tag,
             label_syms,
             value_syms,
-            timestamp_sym: cfg.timestamp,
-            extra_labels: cfg.extra_labels,
-            inbounds,
+            timestamp_sym,
+            extra_labels,
             outbound,
-            interval: cfg.interval,
-            buffer_size: cfg.buffer_size,
-        })
+        }
     }
 
     fn transform(&self, record: Record) -> super::Result<Vec<Record>> {
@@ -205,6 +161,119 @@ impl TimeseriesPipe {
     }
 }
 
+pub struct TimeseriesPipe {
+    tag: TagId,
+
+    inner: Arc<InnerState>,
+
+    inbounds: Vec<TaggedReceiver>,
+    outbound: TaggedSender,
+    last_handle: Option<JoinHandle<()>>,
+
+    interval: Duration,
+    buffer_size: usize,
+}
+
+pub static RECORD_TYPE_TIMESERIES: Lazy<Symbol> = Lazy::new(|| Symbol::intern("TimeseriesRecord"));
+
+pub static RECORD_TYPE_TIMESERIES_VALUE: Lazy<Value> =
+    Lazy::new(|| Value::from(RECORD_TYPE_TIMESERIES.as_ref()));
+
+pub const NAME_FIELD_STR: &str = "name";
+pub const TIMESTAMP_FIELD_STR: &str = "timestamp";
+pub const METRIC_TYPE_FIELD_STR: &str = "metric_type";
+pub const LABELS_FIELD_STR: &str = "labels";
+pub const VALUE_FIELD_STR: &str = "value";
+pub const UNIT_FIELD_STR: &str = "unit";
+
+pub static NAME_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(NAME_FIELD_STR));
+pub static TIMESTAMP_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(TIMESTAMP_FIELD_STR));
+pub static METRIC_TYPE_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(METRIC_TYPE_FIELD_STR));
+pub static LABELS_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(LABELS_FIELD_STR));
+pub static VALUE_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(VALUE_FIELD_STR));
+pub static UNIT_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(UNIT_FIELD_STR));
+
+impl TimeseriesPipe {
+    pub fn try_create_from(
+        cfg: TimeseriesPipeConfig,
+        channels: &mut ChannelGraph,
+    ) -> super::Result<Self> {
+        let tag = cfg.tag.into();
+        let inbounds = cfg
+            .inbounds
+            .iter()
+            .map(|inbound| channels.recv_from(inbound, &tag))
+            .collect::<Vec<_>>();
+        let outbound = channels.sender(&tag);
+
+        let value_syms = if let Some(values) = cfg.values {
+            let syms = values
+                .into_iter()
+                .map(|field| (field.name, field.r#type))
+                .collect::<HashMap<_, _>>();
+
+            Some(syms)
+        } else {
+            // If the values field is not set, all the fields except the labels will be treated as values.
+            None
+        };
+
+        let label_syms = cfg
+            .labels
+            .into_iter()
+            .map(|label| label.clone())
+            .collect::<Vec<_>>();
+
+        let inner = InnerState::new(
+            tag.clone(),
+            label_syms,
+            value_syms,
+            cfg.timestamp,
+            cfg.extra_labels,
+            outbound.clone(),
+        );
+        let inner = Arc::new(inner);
+
+        Ok(TimeseriesPipe {
+            tag,
+            inner,
+            inbounds,
+            outbound,
+            last_handle: None,
+            interval: cfg.interval,
+            buffer_size: cfg.buffer_size,
+        })
+    }
+
+    fn transform_records(&self, record: Vec<Record>) -> super::Result<JoinHandle<()>> {
+        let inner = self.inner.clone();
+        let handle = tokio::spawn(async move {
+            let record_vecs = record
+                .into_par_iter()
+                .map(|r| inner.transform(r))
+                .filter_map(|r| match r {
+                    Ok(records) => Some(records.into_par_iter()),
+                    Err(e) => {
+                        warn!("{}: error transforming record: {}", inner.tag, e);
+                        None
+                    }
+                })
+                .flat_map(|records| records.into_par_iter())
+                .collect_vec_list();
+
+            for records in record_vecs {
+                for record in records {
+                    if let Err(e) = inner.outbound.send(record.clone()) {
+                        warn!("{}: error sending record: {}", inner.tag, e);
+                    }
+                }
+            }
+        });
+
+        Ok(handle)
+    }
+}
+
 impl HasTag for TimeseriesPipe {
     fn tag(&self) -> &TagId {
         &self.tag
@@ -235,10 +304,20 @@ impl Actor for TimeseriesPipe {
 
         debug!("{}: received {} records", self.tag, records.len());
 
-        for record in records {
-            let records = self.transform(record)?;
-            for record in records {
-                self.outbound.send(record)?;
+        match use_serial_mode() {
+            true => {
+                let handle = self.last_handle.take();
+                if let Some(handle) = handle {
+                    if let Err(e) = handle.await {
+                        warn!("{}: error waiting for handle: {}", self.tag, e);
+                    }
+                }
+
+                let this_handle = self.transform_records(records)?;
+                self.last_handle = Some(this_handle);
+            }
+            false => {
+                let _ = self.transform_records(records);
             }
         }
 

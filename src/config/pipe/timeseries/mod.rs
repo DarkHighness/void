@@ -150,9 +150,9 @@ fn default_timeseries_tag() -> PipeTagId {
 }
 
 fn default_timeseries_pipe_interval() -> Duration {
-    Duration::from_secs(1)
+    Duration::from_millis(200)
 }
 
 fn default_timeseries_pipe_buffer_size() -> usize {
-    512
+    4096
 }

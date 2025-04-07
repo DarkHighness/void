@@ -1,11 +1,14 @@
-use std::{collections::HashMap, ops::Deref, time::Duration};
+use std::{collections::HashMap, ops::Deref, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use dashmap::{DashMap, DashSet};
 use log::{error, info};
 use once_cell::sync::Lazy;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use tokio::task::JoinHandle;
 
 use crate::{
-    config::pipe::timeseries::TimeseriesAnnotatePipeConfig,
+    config::{global::use_serial_mode, pipe::timeseries::TimeseriesAnnotatePipeConfig},
     core::{
         actor::Actor,
         manager::{ChannelGraph, TaggedReceiver, TaggedSender},
@@ -19,15 +22,52 @@ use crate::{
 use super::{LABELS_FIELD, LABELS_FIELD_STR};
 
 #[derive(Debug)]
+struct InnerState {
+    tag: TagId,
+    labels_to_add: DashMap<Symbol, Value>,
+    labels_to_remove: DashSet<Symbol>,
+}
+
+impl InnerState {
+    fn new(tag: TagId) -> Self {
+        Self {
+            tag,
+            labels_to_add: DashMap::new(),
+            labels_to_remove: DashSet::new(),
+        }
+    }
+
+    fn transform(&self, mut record: Record) -> super::Result<Record> {
+        let labels = record
+            .get_mut(&LABELS_FIELD)
+            .ok_or_else(|| super::Error::FieldNotFound(LABELS_FIELD_STR))?;
+
+        for label in self.labels_to_add.iter() {
+            let name = label.key().into();
+            let value = label.value().clone();
+            labels.map_set(name, value)?;
+        }
+
+        for label in self.labels_to_remove.iter() {
+            let name = label.clone().into();
+            labels.map_remove(&name)?;
+        }
+
+        Ok(record)
+    }
+}
+
+#[derive(Debug)]
 pub struct TimeseriesAnnotatePipe {
     tag: TagId,
 
     data_inbounds: Vec<TaggedReceiver>,
     control_inbounds: Vec<TaggedReceiver>,
-    outbound: TaggedSender,
 
-    labels_to_add: HashMap<Symbol, Value>,
-    labels_to_remove: Vec<Symbol>,
+    inner: Arc<InnerState>,
+
+    outbound: TaggedSender,
+    last_handle: Option<JoinHandle<()>>,
 
     interval: Duration,
     buffer_size: usize,
@@ -63,14 +103,15 @@ impl TimeseriesAnnotatePipe {
             .map(|inbound| channels.recv_from(inbound, &cfg.tag))
             .collect::<Vec<_>>();
         let outbound = channels.sender(&cfg.tag);
+        let inner = Arc::new(InnerState::new((&cfg.tag).into()));
 
         let pipe = TimeseriesAnnotatePipe {
             tag: cfg.tag.into(),
             data_inbounds,
             control_inbounds,
+            inner,
             outbound,
-            labels_to_add: HashMap::new(),
-            labels_to_remove: Vec::new(),
+            last_handle: None,
             interval: cfg.interval,
             buffer_size: cfg.buffer_size,
         };
@@ -107,14 +148,14 @@ impl TimeseriesAnnotatePipe {
                     value
                 );
 
-                self.labels_to_add.insert(name, value);
+                self.inner.labels_to_add.insert(name, value);
             }
             ACTION_UNSET => {
                 let name = record
                     .get(NAME_FIELD.deref())
                     .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
 
-                let name = name.ensure_string()?.clone();
+                let name = name.ensure_string()?;
 
                 info!(
                     "Timeseries {} will no longer set label: {}",
@@ -122,7 +163,7 @@ impl TimeseriesAnnotatePipe {
                     name
                 );
 
-                self.labels_to_remove.push(name);
+                self.inner.labels_to_add.remove(name);
             }
             ACTION_DELETE => {
                 let name = record
@@ -133,24 +174,24 @@ impl TimeseriesAnnotatePipe {
 
                 info!("Timeseries {} will delete label: {}", self.tag(), name);
 
-                self.labels_to_remove.push(name);
+                self.inner.labels_to_remove.insert(name);
             }
             ACTION_UNDELETE => {
                 let name = record
                     .get(NAME_FIELD.deref())
                     .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
 
-                let name = name.ensure_string()?.clone();
+                let name = name.ensure_string()?;
 
                 info!("Timeseries {} will undelete label: {}", self.tag(), name);
 
-                self.labels_to_remove.retain(|label| label != &name);
+                self.inner.labels_to_remove.remove(name);
             }
             ACTION_CLEAR => {
                 info!("Timeseries {} will clear all actions", self.tag());
 
-                self.labels_to_add.clear();
-                self.labels_to_remove.clear();
+                self.inner.labels_to_add.clear();
+                self.inner.labels_to_remove.clear();
             }
             _ => {
                 return Err(super::Error::InvalidAction(action.to_string()));
@@ -160,21 +201,31 @@ impl TimeseriesAnnotatePipe {
         Ok(())
     }
 
-    fn transform(&self, record: &mut Record) -> super::Result<()> {
-        let labels = record
-            .get_mut(&super::LABELS_FIELD)
-            .ok_or_else(|| super::Error::FieldNotFound(LABELS_FIELD_STR))?;
+    fn transform_records(&self, record: Vec<Record>) -> super::Result<JoinHandle<()>> {
+        let inner = self.inner.clone();
+        let outbound = self.outbound.clone();
+        let handle = tokio::spawn(async move {
+            let record_vecs = record
+                .into_par_iter()
+                .filter_map(|record| match inner.transform(record) {
+                    Ok(record) => Some(record),
+                    Err(e) => {
+                        error!("{}: failed to transform record: {:?}", inner.tag, e);
+                        None
+                    }
+                })
+                .collect_vec_list();
 
-        for (label, value) in &self.labels_to_add {
-            labels.map_set(label.into(), value.clone())?;
-        }
+            for records in record_vecs {
+                for record in records {
+                    if let Err(e) = outbound.send(record) {
+                        error!("{}: failed to send record: {:?}", inner.tag, e);
+                    }
+                }
+            }
+        });
 
-        for label in &self.labels_to_remove {
-            let label: Value = label.into();
-            labels.map_remove(&label)?;
-        }
-
-        Ok(())
+        Ok(handle)
     }
 }
 
@@ -198,15 +249,15 @@ impl Actor for TimeseriesAnnotatePipe {
             _ = ctx.cancelled() => return Ok(()),
             records = recv_batch(&tag, &mut self.data_inbounds, Some(self.interval), self.buffer_size, ctx.clone()) => {
                 match records {
-                    Ok(records) => {
-                        for mut record in records {
-                            if let Err(e) = self.transform(&mut record) {
-                                error!("{}: failed to transform record: {:?}", self.tag, e);
+                    Ok(records) => match use_serial_mode() {
+                        true => {
+                            if let Some(handle) = self.last_handle.take() {
+                                handle.await?;
                             }
-
-                            if let Err(e) = self.outbound.send(record) {
-                                error!("{}: failed to send record: {:?}", self.tag, e);
-                            }
+                            self.last_handle = Some(self.transform_records(records)?);
+                        }
+                        false => {
+                            let _ = self.transform_records(records)?;
                         }
                     }
                     Err(crate::utils::recv::Error::Timeout) => {}

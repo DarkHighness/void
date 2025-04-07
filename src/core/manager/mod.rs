@@ -82,8 +82,6 @@ pub fn try_create_from_config(cfg: Config) -> Result<Manager> {
             .collect::<Result<Vec<_>>>()?
     }};
 
-    channel_graph.dump_to_dot();
-
     let mgr = Manager {
         inbounds,
         pipes,

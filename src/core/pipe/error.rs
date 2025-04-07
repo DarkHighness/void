@@ -17,6 +17,8 @@ pub enum Error {
     Recv(#[from] crate::utils::recv::Error),
     #[error(transparent)]
     Send(#[from] tokio::sync::broadcast::error::SendError<Record>),
+    #[error(transparent)]
+    Join(#[from] tokio::task::JoinError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

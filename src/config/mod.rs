@@ -101,6 +101,7 @@ macro_rules! verify_all {
 
 impl Verify for Config {
     fn verify(&mut self) -> error::Result<()> {
+        self.global.verify()?;
         // skip disabled items
         self.inbounds.retain(|cfg| !cfg.disabled());
         self.outbounds.retain(|cfg| !cfg.disabled());

@@ -4,6 +4,7 @@ use crate::core::{manager::TaggedReceiver, tag::TagId, types::Record};
 use futures::StreamExt;
 use log::{debug, warn};
 use miette::Diagnostic;
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use thiserror::Error;
 use tokio::sync::broadcast::error::RecvError;
 use tokio_util::sync::CancellationToken;
@@ -76,30 +77,53 @@ pub async fn recv_batch(
     let timeout = timeout.unwrap_or(Duration::from_secs(999));
     let mut time_left = timeout;
 
-    let tags = inbounds
-        .iter()
-        .map(|inbound| inbound.tag().clone())
+    let mut records = inbounds
+        .par_iter_mut()
+        .map(|inbound| {
+            let mut buffer = Vec::new();
+            while let Ok(record) = inbound.try_recv() {
+                buffer.push(record);
+                if buffer.len() >= num_records {
+                    break;
+                }
+
+                if now.elapsed() >= timeout {
+                    break;
+                }
+            }
+            buffer
+        })
+        .flatten()
         .collect::<Vec<_>>();
 
-    let mut records = Vec::new();
+    if records.len() >= num_records {
+        warn!(
+            "{}: sync recv overflow {} records, returning...",
+            who,
+            records.len()
+        );
+        return Ok(records);
+    }
 
-    'body: loop {
+    loop {
         let futs = inbounds.iter_mut().map(|inbound| {
             let fut = async move { (inbound.tag().clone(), inbound.recv().await) };
 
             Box::pin(fut)
         });
 
-        tokio::select! {
+        let last_active_index = tokio::select! {
             (record, i, _) = futures::future::select_all(futs) => match record {
                 (_, Ok(record)) => {
                   time_left = timeout.saturating_sub(now.elapsed());
 
                   records.push(record);
+
                   if records.len() >= num_records {
-                      debug!("{} received {} record from {}", who, records.len(), tags[i]);
                       return Ok(records);
                   }
+
+                  i
                 },
                 (tag, Err(RecvError::Closed)) => {
                     return Err(Error::ChannelClosed(tag))
@@ -107,7 +131,8 @@ pub async fn recv_batch(
                 (tag, Err(RecvError::Lagged(n))) => {
                     warn!("{}: inbound lagged additional {}", tag, n);
                     time_left = timeout.saturating_sub(now.elapsed());
-                    continue 'body;
+
+                    i
                 }
             },
             _ = tokio::time::sleep(time_left) => match records.len() {
@@ -116,6 +141,13 @@ pub async fn recv_batch(
             },
             _ = ctx.cancelled() => {
                 return Err(Error::Canceled);
+            }
+        };
+
+        while let Some(record) = inbounds[last_active_index].try_recv().ok() {
+            records.push(record);
+            if records.len() >= num_records || now.elapsed() >= timeout {
+                return Ok(records);
             }
         }
     }

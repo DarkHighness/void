@@ -13,7 +13,7 @@ protocol = "control_csv"
 [[outbounds]]
 type = "stdio"
 inbounds = ["pipe:timeseries_annotate"]
-disabled = false
+disabled = true
 
 [[outbounds]]
 type = "prometheus"
