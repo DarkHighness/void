@@ -13,9 +13,12 @@ use crate::{
         manager::{ChannelGraph, TaggedReceiver, TaggedSender},
         pipe::Pipe,
         tag::{HasTag, TagId},
-        types::{Record, Symbol, Value},
+        types::{Record, Symbol, Value, STAGE_PIPE_PROCESSED, STAGE_PIPE_RECEIVED},
     },
-    utils::recv::{recv, recv_batch},
+    utils::{
+        record_timing::mark_pipeline_stage,
+        recv::{recv, recv_batch},
+    },
 };
 
 use super::{LABELS_FIELD, LABELS_FIELD_STR};
@@ -200,27 +203,39 @@ impl TimeseriesAnnotatePipe {
         Ok(())
     }
 
-    fn transform_records(&self, record: Vec<Record>) -> super::Result<JoinHandle<()>> {
+    fn transform_records(&self, mut records: Vec<Record>) -> super::Result<JoinHandle<()>> {
+        for record in records.iter_mut() {
+            record.mark_timestamp(&format!("{}-{}", STAGE_PIPE_RECEIVED, self.tag));
+        }
+
         let inner = self.inner.clone();
         let outbound = self.outbound.clone();
 
+        // transform records
+        let mut transformed_records: Vec<_> = records
+            .into_iter()
+            .filter_map(|record| match inner.transform(record) {
+                Ok(record) => Some(record),
+                Err(e) => {
+                    error!("{}: failed to transform record: {:?}", inner.tag, e);
+                    None
+                }
+            })
+            .collect();
+
+        for record in transformed_records.iter_mut() {
+            record.mark_timestamp(&format!("{}-{}", STAGE_PIPE_PROCESSED, inner.tag));
+        }
+
         let handle = tokio::task::Builder::new()
-            .name(&format!("{}-transform", self.tag))
+            .name(&format!("{}-send", self.tag))
             .spawn(async move {
-                record
-                    .into_iter()
-                    .filter_map(|record| match inner.transform(record) {
-                        Ok(record) => Some(record),
-                        Err(e) => {
-                            error!("{}: failed to transform record: {:?}", inner.tag, e);
-                            None
-                        }
-                    })
-                    .for_each(|r| {
-                        if let Err(e) = outbound.send(r) {
-                            error!("{}: failed to send record: {:?}", inner.tag, e);
-                        }
-                    });
+                // send transformed records
+                transformed_records.into_iter().for_each(|r| {
+                    if let Err(e) = outbound.send(r) {
+                        error!("{}: failed to send record: {:?}", inner.tag, e);
+                    }
+                });
             })?;
 
         Ok(handle)
@@ -244,7 +259,7 @@ impl Actor for TimeseriesAnnotatePipe {
         let tag = self.tag().clone();
 
         tokio::select! {
-            _ = ctx.cancelled() => return Ok(()),
+            biased;
             records = recv_batch(&tag, &mut self.data_inbounds, Some(self.interval), self.buffer_size, ctx.clone()) => {
                 match records {
                     Ok(records) => match use_serial_mode() {
@@ -262,6 +277,7 @@ impl Actor for TimeseriesAnnotatePipe {
                     Err(e) => return Err(e.into()),
                 }
             }
+            _ = ctx.cancelled() => return Ok(()),
             record = recv(&tag, &mut self.control_inbounds, None, ctx.clone()) => {
                 match record {
                     Ok(record) => {

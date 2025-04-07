@@ -1,3 +1,6 @@
+[global]
+time_tracing="time.txt"
+
 [[inbounds]]
 tag = "data"
 type = "unix_socket"

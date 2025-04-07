@@ -2,6 +2,8 @@ use log::{error, warn};
 use tokio::{io::AsyncRead, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
+use crate::core::types::{Attribute, Record, STAGE_INBOUND_RECEIVED};
+use crate::utils::record_timing::mark_pipeline_stage;
 use crate::{
     config::ProtocolConfig,
     core::{
@@ -56,7 +58,7 @@ impl ReaderBasedInstance {
                 loop {
                     let next_record = parser.read_next();
                     let cancelled = self.ctx.cancelled();
-                    let record = tokio::select! {
+                    let mut record = tokio::select! {
                         // Instance has been dropped
                         _ = cancelled => break,
                         record = next_record => match record {
@@ -74,12 +76,15 @@ impl ReaderBasedInstance {
                         }
                     };
 
+                    record.mark_timestamp(STAGE_INBOUND_RECEIVED);
+                    record.set_attribute(Attribute::Inbound, (&self.tag).into());
+
                     if let Err(err) = self.sender.send(record) {
                         error!("{} failed to send, err: {}", &name, err);
                         break;
                     }
                 }
             })
-            .expect("Failed to spawn task")
+            .expect("Failed to spawn instance")
     }
 }

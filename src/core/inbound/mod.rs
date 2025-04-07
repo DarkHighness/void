@@ -21,7 +21,6 @@ pub fn try_create_from(
             protocol_config,
             channel_graph,
         )?),
-        _ => unimplemented!(),
     };
 
     Ok(inbound)

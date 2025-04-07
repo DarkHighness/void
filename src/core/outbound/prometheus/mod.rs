@@ -1,19 +1,27 @@
 use crate::{
-    config::outbound::{auth::AuthConfig, prometheus::PrometheusOutboundConfig},
+    config::{
+        global::{time_tracing_path, use_time_tracing},
+        outbound::{auth::AuthConfig, prometheus::PrometheusOutboundConfig},
+    },
     core::{
         actor::Actor,
         manager::{ChannelGraph, TaggedReceiver},
         tag::{HasTag, TagId},
+        types::{STAGE_OUTBOUND_PROCESSED, STAGE_OUTBOUND_RECEIVED},
     },
-    utils::recv::recv_batch,
+    utils::{
+        record_timing::{mark_pipeline_stage, summarize_record_timings},
+        recv::recv_batch,
+    },
 };
+use std::io::Write;
 
 pub mod error;
 pub mod r#type;
 
 use async_trait::async_trait;
 pub use error::{Error, Result};
-use log::{info, warn};
+use log::{error, info, warn};
 use r#type::WriteRequest;
 use tokio_util::sync::CancellationToken;
 
@@ -78,14 +86,30 @@ impl Actor for PrometheusOutbound {
         let interval = (&self.interval).clone();
         let buffer_size = self.buffer_size;
 
-        let records =
+        let mut records =
             match recv_batch(&tag, self.inbounds(), Some(interval), buffer_size, ctx).await {
-                Ok(records) => records,
+                Ok(mut records) => {
+                    mark_pipeline_stage(&mut records, STAGE_OUTBOUND_RECEIVED);
+                    records
+                }
                 Err(crate::utils::recv::Error::Timeout) => {
                     return Ok(());
                 }
                 Err(e) => return Err(e.into()),
             };
+
+        mark_pipeline_stage(&mut records, STAGE_OUTBOUND_PROCESSED);
+        if use_time_tracing() {
+            let file = std::fs::File::options()
+                .append(true)
+                .create(true)
+                .open(time_tracing_path())
+                .unwrap();
+            let mut writer = std::io::BufWriter::new(file);
+            for record in records.iter() {
+                writeln!(writer, "{}", summarize_record_timings(record)).unwrap();
+            }
+        }
 
         let tss = r#type::transform_timeseries(records)?;
 
@@ -108,21 +132,30 @@ impl Actor for PrometheusOutbound {
         let request: WriteRequest = tss.into();
         let request = request.build_request(&self.client, &self.auth, &self.address, "void")?;
 
-        let response = self
-            .client
-            .execute(request)
-            .await
-            .map_err(|e| Error::from(e))?;
+        let client = self.client.clone();
 
-        if response.status() != reqwest::StatusCode::NO_CONTENT {
-            return Err(Error::RequestError(format!(
-                "{}: request failed ({}): {}",
-                self.tag,
-                response.status(),
-                response.text().await.unwrap_or_default()
-            ))
-            .into());
-        }
+        // spawn a task to send the request
+        let _ = tokio::task::Builder::new()
+            .name(&format!("{}-request", self.tag))
+            .spawn(async move {
+                let response = client.execute(request).await;
+
+                match response {
+                    Ok(response) => {
+                        if response.status() != reqwest::StatusCode::NO_CONTENT {
+                            error!(
+                                "{}: request failed ({}): {}",
+                                tag,
+                                response.status(),
+                                response.text().await.unwrap_or_default()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        error!("{}: request failed: {}", tag, e);
+                    }
+                }
+            });
 
         Ok(())
     }

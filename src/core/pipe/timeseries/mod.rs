@@ -21,9 +21,9 @@ use crate::{
         actor::Actor,
         manager::{ChannelGraph, TaggedReceiver, TaggedSender},
         tag::{HasTag, TagId},
-        types::{Attribute, Record, Symbol, Value},
+        types::{Attribute, Record, Symbol, Value, STAGE_PIPE_PROCESSED, STAGE_PIPE_RECEIVED},
     },
-    utils::recv::recv_batch,
+    utils::{record_timing::mark_pipeline_stage, recv::recv_batch},
 };
 
 use super::Pipe;
@@ -58,6 +58,11 @@ impl InnerState {
     }
 
     fn transform(&self, record: Record) -> super::Result<Vec<Record>> {
+        let (creation_time, stage_duration) = (
+            record.creation_time().clone(),
+            record.get_stage_duration().clone(),
+        );
+
         let inbound = record
             .get_attribute(&Attribute::Inbound)
             .cloned()
@@ -147,6 +152,9 @@ impl InnerState {
 
             new_record.set_attribute(Attribute::Type, RECORD_TYPE_TIMESERIES_VALUE.clone());
             new_record.set_attribute(Attribute::Inbound, inbound.clone());
+
+            new_record.set_creation_time(creation_time.clone());
+            new_record.set_stage_duration_map(stage_duration.clone());
 
             new_records.push(new_record);
         }
@@ -244,13 +252,17 @@ impl TimeseriesPipe {
         })
     }
 
-    fn transform_records(&self, record: Vec<Record>) -> super::Result<JoinHandle<()>> {
+    fn transform_records(&self, mut records: Vec<Record>) -> super::Result<JoinHandle<()>> {
+        for record in &mut records {
+            record.mark_timestamp(&format!("{}:{}", STAGE_PIPE_RECEIVED, self.tag));
+        }
+
         let inner = self.inner.clone();
 
         let handle = tokio::task::Builder::new()
             .name(&format!("{}-transform", self.tag))
             .spawn(async move {
-                record
+                let mut transformed_records: Vec<_> = records
                     .into_iter()
                     .map(|r| inner.transform(r))
                     .filter_map(|r| match r {
@@ -261,11 +273,18 @@ impl TimeseriesPipe {
                         }
                     })
                     .flatten()
-                    .for_each(|record| {
-                        if let Err(e) = inner.outbound.send(record) {
-                            warn!("{}: error sending record: {}", inner.tag, e);
-                        }
-                    });
+                    .collect();
+
+                for record in &mut transformed_records {
+                    record.mark_timestamp(&format!("{}:{}", STAGE_PIPE_PROCESSED, inner.tag));
+                }
+
+                // mark pipeline sending time
+                transformed_records.into_iter().for_each(|record| {
+                    if let Err(e) = inner.outbound.send(record) {
+                        warn!("{}: error sending record: {}", inner.tag, e);
+                    }
+                });
             })?;
 
         Ok(handle)

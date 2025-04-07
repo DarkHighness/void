@@ -68,7 +68,7 @@ impl Verify for CSVProtocolConfig {
                 col.index = i;
             });
         } else {
-            // 检查是否有重复的 Index
+            // check if all index are unique
             let index_set = self.fields.iter().map(|c| c.index).collect::<HashSet<_>>();
             if index_set.len() != self.fields.len() {
                 return Err(crate::config::Error::InvalidConfig(

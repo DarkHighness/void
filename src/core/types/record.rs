@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    time::{Duration, Instant},
+};
 
 use crate::core::types::resolve;
 
@@ -13,17 +17,24 @@ pub enum Attribute {
 impl Display for Attribute {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Attribute::Type => write!(f, "__type__"),
             Attribute::Inbound => write!(f, "__inbound__"),
+            Attribute::Type => write!(f, "__type__"),
         }
     }
 }
 
+pub const STAGE_INBOUND_RECEIVED: &str = "inbound_received";
+pub const STAGE_PIPE_RECEIVED: &str = "pipe_received";
+pub const STAGE_PIPE_PROCESSED: &str = "pipe_processed";
+pub const STAGE_OUTBOUND_RECEIVED: &str = "outbound_received";
+pub const STAGE_OUTBOUND_PROCESSED: &str = "outbound_processed";
+
 #[derive(Debug, Clone)]
 pub struct Record {
     values: HashMap<Symbol, Value>,
-
     attributes: HashMap<Attribute, Value>,
+    creation_time: Instant,
+    stage_duration: HashMap<String, Duration>,
 }
 
 impl Record {
@@ -31,6 +42,8 @@ impl Record {
         Self {
             values: HashMap::new(),
             attributes: HashMap::new(),
+            creation_time: Instant::now(),
+            stage_duration: HashMap::new(),
         }
     }
 
@@ -38,6 +51,8 @@ impl Record {
         Self {
             values,
             attributes: HashMap::new(),
+            creation_time: Instant::now(),
+            stage_duration: HashMap::new(),
         }
     }
 
@@ -45,7 +60,57 @@ impl Record {
         values: HashMap<Symbol, Value>,
         attributes: HashMap<Attribute, Value>,
     ) -> Self {
-        Self { values, attributes }
+        Self {
+            values,
+            attributes,
+            creation_time: Instant::now(),
+            stage_duration: HashMap::new(),
+        }
+    }
+
+    pub fn mark_timestamp(&mut self, stage_name: &str) {
+        let elapsed = self.creation_time.elapsed();
+        self.stage_duration.insert(stage_name.to_string(), elapsed);
+    }
+
+    pub fn get_timestamp(&self, stage_name: &str) -> Option<&Duration> {
+        self.stage_duration.get(stage_name)
+    }
+
+    pub fn get_duration_between(&self, start_stage: &str, end_stage: &str) -> Option<Duration> {
+        let start = self.stage_duration.get(start_stage)?;
+        let end = self.stage_duration.get(end_stage)?;
+
+        if end > start {
+            Some(*end - *start)
+        } else {
+            None
+        }
+    }
+
+    pub fn inherit_timestamps(&mut self, other: &Self) {
+        self.creation_time = other.creation_time;
+        self.stage_duration = other.stage_duration.clone();
+    }
+
+    pub fn set_stage_duration_map(&mut self, stage_duration: HashMap<String, Duration>) {
+        self.stage_duration = stage_duration;
+    }
+
+    pub fn set_creation_time(&mut self, creation_time: Instant) {
+        self.creation_time = creation_time;
+    }
+
+    pub fn get_stage_duration(&self) -> &HashMap<String, Duration> {
+        &self.stage_duration
+    }
+
+    pub fn total_elapsed(&self) -> Duration {
+        self.creation_time.elapsed()
+    }
+
+    pub fn creation_time(&self) -> &Instant {
+        &self.creation_time
     }
 
     pub fn set(&mut self, key: Symbol, value: Value) {
@@ -137,6 +202,12 @@ impl Display for Record {
             format!("\"{}\": {}", key, value)
         });
 
+        // 添加时间戳信息
+        let timestamps = self
+            .stage_duration
+            .iter()
+            .map(|(stage, duration)| format!("{} time: {}s", stage, duration.as_secs_f64()));
+
         let r#type = self
             .get_type()
             .map(|t| t.to_string())
@@ -144,6 +215,7 @@ impl Display for Record {
 
         let s = fields
             .chain(attrs)
+            .chain(timestamps)
             .fold(format!("{} {{", r#type), |acc, field| {
                 format!("{}\n  {},", acc, field)
             });

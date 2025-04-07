@@ -1,9 +1,13 @@
 use async_trait::async_trait;
 use futures::stream::StreamExt;
+use std::io::Write;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::outbound::stdio::{Io, StdioOutboundConfig},
+    config::{
+        global::{time_tracing_path, use_time_tracing},
+        outbound::stdio::{Io, StdioOutboundConfig},
+    },
     core::{
         actor::Actor,
         manager::{ChannelGraph, TaggedReceiver},
@@ -13,6 +17,9 @@ use crate::{
 };
 
 use super::base::Outbound;
+
+use crate::core::types::{STAGE_OUTBOUND_PROCESSED, STAGE_OUTBOUND_RECEIVED};
+use crate::utils::record_timing::{mark_pipeline_stage, summarize_record_timings};
 
 pub struct StdioOutbound {
     tag: TagId,
@@ -63,14 +70,32 @@ impl Actor for StdioOutbound {
         )
         .await
         {
-            Ok(records) => records,
+            Ok(mut records) => {
+                // Mark outbound receiving time
+                mark_pipeline_stage(&mut records, STAGE_OUTBOUND_RECEIVED);
+                records
+            }
             Err(crate::utils::recv::Error::Timeout) => {
                 return Ok(());
             }
             Err(e) => return Err(e.into()),
         };
 
-        for record in records {
+        for mut record in records {
+            // Mark outbound processing completion time
+            record.mark_timestamp(STAGE_OUTBOUND_PROCESSED);
+
+            if use_time_tracing() {
+                let file = std::fs::File::options()
+                    .append(true)
+                    .create(true)
+                    .open(time_tracing_path())
+                    .unwrap();
+                let mut writer = std::io::BufWriter::new(file);
+                writeln!(writer, "{}", summarize_record_timings(&record)).unwrap();
+            }
+
+            // Output record content
             match self.io {
                 Io::Stdout => {
                     println!("{}", record);
