@@ -10,7 +10,7 @@ use crate::{
 use super::auth::AuthConfig;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct PrometheusConfig {
+pub struct PrometheusOutboundConfig {
     #[serde(default = "default_prometheus_tag")]
     pub tag: OutboundTagId,
     pub address: Env<String>,
@@ -25,11 +25,14 @@ pub struct PrometheusConfig {
 
     #[serde(default)]
     pub disabled: bool,
+
+    #[serde(default = "default_prometheus_outbound_buffer_size")]
+    pub buffer_size: usize,
 }
 
-impl PrometheusConfig {}
+impl PrometheusOutboundConfig {}
 
-impl Verify for PrometheusConfig {
+impl Verify for PrometheusOutboundConfig {
     fn verify(&mut self) -> super::Result<()> {
         if self.address.is_empty() {
             return Err(super::Error::EmptyField((&self.tag).into(), "address"));
@@ -62,4 +65,8 @@ where
         },
         None => Ok(std::time::Duration::from_secs(1)),
     }
+}
+
+fn default_prometheus_outbound_buffer_size() -> usize {
+    2048
 }

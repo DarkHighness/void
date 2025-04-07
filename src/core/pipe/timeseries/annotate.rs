@@ -1,11 +1,11 @@
-use std::{collections::HashMap, ops::Deref};
+use std::{collections::HashMap, ops::Deref, time::Duration};
 
 use async_trait::async_trait;
 use log::{error, info};
 use once_cell::sync::Lazy;
 
 use crate::{
-    config::pipe::timeseries::TimeseriesActionPipeConfig,
+    config::pipe::timeseries::TimeseriesAnnotatePipeConfig,
     core::{
         actor::Actor,
         manager::{ChannelGraph, TaggedReceiver, TaggedSender},
@@ -19,7 +19,7 @@ use crate::{
 use super::{LABELS_FIELD, LABELS_FIELD_STR};
 
 #[derive(Debug)]
-pub struct TimeseriesActionPipe {
+pub struct TimeseriesAnnotatePipe {
     tag: TagId,
 
     data_inbounds: Vec<TaggedReceiver>,
@@ -28,6 +28,9 @@ pub struct TimeseriesActionPipe {
 
     labels_to_add: HashMap<Symbol, Value>,
     labels_to_remove: Vec<Symbol>,
+
+    interval: Duration,
+    buffer_size: usize,
 }
 
 pub const ACTION_FIELD_STR: &str = "action";
@@ -44,9 +47,9 @@ pub const ACTION_DELETE: &'static str = "delete";
 pub const ACTION_UNDELETE: &'static str = "undelete";
 pub const ACTION_CLEAR: &'static str = "clear";
 
-impl TimeseriesActionPipe {
+impl TimeseriesAnnotatePipe {
     pub fn try_create_from(
-        cfg: TimeseriesActionPipeConfig,
+        cfg: TimeseriesAnnotatePipeConfig,
         channels: &mut ChannelGraph,
     ) -> super::Result<Self> {
         let data_inbounds = cfg
@@ -61,13 +64,15 @@ impl TimeseriesActionPipe {
             .collect::<Vec<_>>();
         let outbound = channels.sender(&cfg.tag);
 
-        let pipe = TimeseriesActionPipe {
+        let pipe = TimeseriesAnnotatePipe {
             tag: cfg.tag.into(),
             data_inbounds,
             control_inbounds,
             outbound,
             labels_to_add: HashMap::new(),
             labels_to_remove: Vec::new(),
+            interval: cfg.interval,
+            buffer_size: cfg.buffer_size,
         };
 
         Ok(pipe)
@@ -173,14 +178,14 @@ impl TimeseriesActionPipe {
     }
 }
 
-impl HasTag for TimeseriesActionPipe {
+impl HasTag for TimeseriesAnnotatePipe {
     fn tag(&self) -> &TagId {
         &self.tag
     }
 }
 
 #[async_trait]
-impl Actor for TimeseriesActionPipe {
+impl Actor for TimeseriesAnnotatePipe {
     type Error = super::Error;
 
     async fn poll(
@@ -191,7 +196,7 @@ impl Actor for TimeseriesActionPipe {
 
         tokio::select! {
             _ = ctx.cancelled() => return Ok(()),
-            records = recv_batch(&tag, &mut self.data_inbounds, std::time::Duration::from_millis(500), 4096, ctx.clone()) => {
+            records = recv_batch(&tag, &mut self.data_inbounds, Some(self.interval), self.buffer_size, ctx.clone()) => {
                 match records {
                     Ok(records) => {
                         for mut record in records {
@@ -208,7 +213,7 @@ impl Actor for TimeseriesActionPipe {
                     Err(e) => return Err(e.into()),
                 }
             }
-            record = recv(&tag, &mut self.control_inbounds, std::time::Duration::from_secs(999), ctx.clone()) => {
+            record = recv(&tag, &mut self.control_inbounds, None, ctx.clone()) => {
                 match record {
                     Ok(record) => {
                         if let Err(e) = self.handle_action_record(record) {
@@ -225,4 +230,4 @@ impl Actor for TimeseriesActionPipe {
     }
 }
 
-impl Pipe for TimeseriesActionPipe {}
+impl Pipe for TimeseriesAnnotatePipe {}

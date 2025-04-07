@@ -57,7 +57,7 @@ impl Actor for StdioOutbound {
         let records = match recv_batch(
             &tag,
             self.inbounds(),
-            std::time::Duration::from_millis(100),
+            Some(std::time::Duration::from_millis(100)),
             16,
             ctx,
         )

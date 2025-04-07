@@ -1,5 +1,5 @@
 use crate::{
-    config::outbound::{auth::AuthConfig, prometheus::PrometheusConfig},
+    config::outbound::{auth::AuthConfig, prometheus::PrometheusOutboundConfig},
     core::{
         actor::Actor,
         manager::{ChannelGraph, TaggedReceiver},
@@ -27,10 +27,15 @@ pub struct PrometheusOutbound {
     client: reqwest::Client,
 
     inbounds: Vec<TaggedReceiver>,
+
+    buffer_size: usize,
 }
 
 impl PrometheusOutbound {
-    pub fn try_create_from(cfg: PrometheusConfig, channels: &mut ChannelGraph) -> Result<Self> {
+    pub fn try_create_from(
+        cfg: PrometheusOutboundConfig,
+        channels: &mut ChannelGraph,
+    ) -> Result<Self> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
             .build()?;
@@ -52,6 +57,7 @@ impl PrometheusOutbound {
             auth,
             client,
             inbounds,
+            buffer_size: cfg.buffer_size,
         })
     }
 }
@@ -69,14 +75,16 @@ impl Actor for PrometheusOutbound {
     async fn poll(&mut self, ctx: CancellationToken) -> std::result::Result<(), Self::Error> {
         let tag = self.tag.clone();
         let interval = (&self.interval).clone();
+        let buffer_size = self.buffer_size;
 
-        let records = match recv_batch(&tag, self.inbounds(), interval, 1024, ctx).await {
-            Ok(records) => records,
-            Err(crate::utils::recv::Error::Timeout) => {
-                return Ok(());
-            }
-            Err(e) => return Err(e.into()),
-        };
+        let records =
+            match recv_batch(&tag, self.inbounds(), Some(interval), buffer_size, ctx).await {
+                Ok(records) => records,
+                Err(crate::utils::recv::Error::Timeout) => {
+                    return Ok(());
+                }
+                Err(e) => return Err(e.into()),
+            };
 
         let tss = r#type::transform_timeseries(records)?;
         let request: WriteRequest = tss.into();

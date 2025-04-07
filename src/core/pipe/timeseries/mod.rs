@@ -1,9 +1,9 @@
-pub mod action;
+pub mod annotate;
 
-pub use action::TimeseriesActionPipe;
+pub use annotate::TimeseriesAnnotatePipe;
 
 pub use super::{Error, Result};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use async_trait::async_trait;
 use log::{debug, warn};
@@ -34,6 +34,9 @@ pub struct TimeseriesPipe {
 
     inbounds: Vec<TaggedReceiver>,
     outbound: TaggedSender,
+
+    interval: Duration,
+    buffer_size: usize,
 }
 
 pub static RECORD_TYPE_TIMESERIES: Lazy<Symbol> = Lazy::new(|| Symbol::intern("TimeseriesRecord"));
@@ -94,7 +97,8 @@ impl TimeseriesPipe {
             extra_labels: cfg.extra_labels,
             inbounds,
             outbound,
-            // lagged_inbound_index: None,
+            interval: cfg.interval,
+            buffer_size: cfg.buffer_size,
         })
     }
 
@@ -216,8 +220,8 @@ impl Actor for TimeseriesPipe {
         let records = match recv_batch(
             &tag,
             &mut self.inbounds,
-            std::time::Duration::from_millis(500),
-            4096,
+            Some(self.interval),
+            self.buffer_size,
             ctx,
         )
         .await

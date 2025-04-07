@@ -13,8 +13,8 @@ pub use super::{Error, Result};
 pub enum PipeConfig {
     #[serde(rename = "timeseries")]
     Timeseries(timeseries::TimeseriesPipeConfig),
-    #[serde(rename = "timeseries_action")]
-    TimeseriesAction(timeseries::TimeseriesActionPipeConfig),
+    #[serde(rename = "timeseries_annotate")]
+    TimeseriesAction(timeseries::TimeseriesAnnotatePipeConfig),
 }
 
 impl Verify for PipeConfig {

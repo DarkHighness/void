@@ -21,10 +21,11 @@ pub enum Error {
 pub async fn recv(
     who: &TagId,
     inbounds: &mut [TaggedReceiver],
-    timeout: Duration,
+    timeout: Option<Duration>,
     ctx: CancellationToken,
 ) -> Result<Record, Error> {
     let now = std::time::Instant::now();
+    let timeout = timeout.unwrap_or(Duration::from_secs(999));
     let mut time_left = timeout;
 
     let tags = inbounds
@@ -67,11 +68,12 @@ pub async fn recv(
 pub async fn recv_batch(
     who: &TagId,
     inbounds: &mut [TaggedReceiver],
-    timeout: Duration,
+    timeout: Option<Duration>,
     num_records: usize,
     ctx: CancellationToken,
 ) -> Result<Vec<Record>, Error> {
     let now = std::time::Instant::now();
+    let timeout = timeout.unwrap_or(Duration::from_secs(999));
     let mut time_left = timeout;
 
     let tags = inbounds

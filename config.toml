@@ -12,12 +12,12 @@ protocol = "control_csv"
 
 [[outbounds]]
 type = "stdio"
-inbounds = ["pipe:timeseries_action"]
+inbounds = ["pipe:timeseries_annotate"]
 disabled = false
 
 [[outbounds]]
 type = "prometheus"
-inbounds = ["pipe:timeseries_action"]
+inbounds = ["pipe:timeseries_annotate"]
 address = "env:PROMETHEUS_ADDRESS"
 interval = "100ms"
 auth = { type = "basic", username = "admin", password = "env:PASSWORD" }
@@ -35,7 +35,7 @@ timestamp = "timestamp"
 extra_labels = { job = "void" }
 
 [[pipes]]
-type = "timeseries_action"
+type = "timeseries_annotate"
 data_inbounds = ["pipe:timeseries"]
 control_inbounds = ["inbound:control"]
 

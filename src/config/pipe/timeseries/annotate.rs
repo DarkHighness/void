@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -6,17 +8,23 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TimeseriesActionPipeConfig {
-    #[serde(default = "default_timeseries_action_tag")]
+pub struct TimeseriesAnnotatePipeConfig {
+    #[serde(default = "default_timeseries_annotate_tag")]
     pub tag: PipeTagId,
     pub data_inbounds: Vec<TagId>,
     pub control_inbounds: Vec<TagId>,
 
     #[serde(default)]
     pub disabled: bool,
+
+    #[serde(default = "default_timeseries_annotate_pipe_interval")]
+    pub interval: Duration,
+
+    #[serde(default = "default_timeseries_annotate_pipe_buffer_size")]
+    pub buffer_size: usize,
 }
 
-impl Verify for TimeseriesActionPipeConfig {
+impl Verify for TimeseriesAnnotatePipeConfig {
     fn verify(&mut self) -> super::Result<()> {
         if self.data_inbounds.is_empty() {
             return Err(super::Error::EmptyField((&self.tag).into(), "inbounds"));
@@ -32,6 +40,14 @@ impl Verify for TimeseriesActionPipeConfig {
     }
 }
 
-fn default_timeseries_action_tag() -> PipeTagId {
-    PipeTagId::new("timeseries_action")
+fn default_timeseries_annotate_tag() -> PipeTagId {
+    PipeTagId::new("timeseries_annotate")
+}
+
+fn default_timeseries_annotate_pipe_interval() -> Duration {
+    Duration::from_secs(1)
+}
+
+fn default_timeseries_annotate_pipe_buffer_size() -> usize {
+    2048
 }

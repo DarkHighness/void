@@ -1,9 +1,9 @@
-pub mod action;
+pub mod annotate;
 
 pub use super::{Error, Result};
-pub use action::TimeseriesActionPipeConfig;
+pub use annotate::TimeseriesAnnotatePipeConfig;
 use log::warn;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
@@ -110,6 +110,12 @@ pub struct TimeseriesPipeConfig {
 
     #[serde(default)]
     pub disabled: bool,
+
+    #[serde(default = "default_timeseries_pipe_interval")]
+    pub interval: Duration,
+
+    #[serde(default = "default_timeseries_pipe_buffer_size")]
+    pub buffer_size: usize,
 }
 
 impl Verify for TimeseriesPipeConfig {
@@ -141,4 +147,12 @@ impl TimeseriesPipeConfig {}
 
 fn default_timeseries_tag() -> PipeTagId {
     PipeTagId::new("timeseries")
+}
+
+fn default_timeseries_pipe_interval() -> Duration {
+    Duration::from_secs(1)
+}
+
+fn default_timeseries_pipe_buffer_size() -> usize {
+    512
 }

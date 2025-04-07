@@ -16,7 +16,7 @@ pub mod stdio;
 pub enum OutboundConfig {
     #[serde(rename = "stdio")]
     Stdio(stdio::StdioOutboundConfig),
-    Prometheus(prometheus::PrometheusConfig),
+    Prometheus(prometheus::PrometheusOutboundConfig),
 }
 
 impl HasTag for OutboundConfig {
