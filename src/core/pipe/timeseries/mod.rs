@@ -41,12 +41,19 @@ pub static RECORD_TYPE_TIMESERIES: Lazy<Symbol> = Lazy::new(|| Symbol::intern("T
 pub static RECORD_TYPE_TIMESERIES_VALUE: Lazy<Value> =
     Lazy::new(|| Value::from(RECORD_TYPE_TIMESERIES.as_ref()));
 
-pub static NAME_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("name"));
-pub static TIMESTAMP_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("timestamp"));
-pub static METRIC_TYPE_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("metric_type"));
-pub static LABELS_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("labels"));
-pub static VALUE_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("value"));
-pub static UNIT_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("unit"));
+pub const NAME_FIELD_STR: &str = "name";
+pub const TIMESTAMP_FIELD_STR: &str = "timestamp";
+pub const METRIC_TYPE_FIELD_STR: &str = "metric_type";
+pub const LABELS_FIELD_STR: &str = "labels";
+pub const VALUE_FIELD_STR: &str = "value";
+pub const UNIT_FIELD_STR: &str = "unit";
+
+pub static NAME_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(NAME_FIELD_STR));
+pub static TIMESTAMP_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(TIMESTAMP_FIELD_STR));
+pub static METRIC_TYPE_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(METRIC_TYPE_FIELD_STR));
+pub static LABELS_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(LABELS_FIELD_STR));
+pub static VALUE_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(VALUE_FIELD_STR));
+pub static UNIT_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(UNIT_FIELD_STR));
 
 impl TimeseriesPipe {
     pub fn try_create_from(
@@ -108,7 +115,7 @@ impl TimeseriesPipe {
         let timestamp = match timestamp {
             Some(ts) => ts,
             None => {
-                return Err(super::Error::InvalidRecord("No timestamp found".into()));
+                return Err(super::Error::FieldNotFound(TIMESTAMP_FIELD_STR));
             }
         };
 
@@ -138,7 +145,7 @@ impl TimeseriesPipe {
                 });
 
         if values.is_empty() {
-            return Err(super::Error::InvalidRecord("No values found".into()));
+            return Err(super::Error::FieldNotFound(VALUE_FIELD_STR));
         }
 
         let mut new_records = Vec::new();
@@ -175,7 +182,7 @@ impl TimeseriesPipe {
             };
 
             for (key, value) in &self.extra_labels {
-                labels.map_set(key.clone().into(), value.as_str().into())?;
+                labels.map_set(key.into(), value.as_str().into())?;
             }
             new_record.set(LABELS_FIELD.clone(), labels);
 
@@ -187,7 +194,7 @@ impl TimeseriesPipe {
 
         if new_records.is_empty() {
             warn!("{}: no values found in record", self.tag);
-            return Err(super::Error::InvalidRecord("No values found".into()));
+            return Err(super::Error::FieldNotFound(VALUE_FIELD_STR));
         }
 
         Ok(new_records)

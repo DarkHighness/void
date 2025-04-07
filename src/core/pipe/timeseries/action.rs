@@ -16,6 +16,8 @@ use crate::{
     utils::recv::{recv, recv_batch},
 };
 
+use super::{LABELS_FIELD, LABELS_FIELD_STR};
+
 #[derive(Debug)]
 pub struct TimeseriesActionPipe {
     tag: TagId,
@@ -28,9 +30,13 @@ pub struct TimeseriesActionPipe {
     labels_to_remove: Vec<Symbol>,
 }
 
-pub static ACTION_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("action"));
-pub static NAME_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("name"));
-pub static VALUE_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern("value"));
+pub const ACTION_FIELD_STR: &str = "action";
+pub const NAME_FIELD_STR: &str = "name";
+pub const VALUE_FIELD_STR: &str = "value";
+
+pub static ACTION_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(ACTION_FIELD_STR));
+pub static NAME_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(NAME_FIELD_STR));
+pub static VALUE_FIELD: Lazy<Symbol> = Lazy::new(|| Symbol::intern(VALUE_FIELD_STR));
 
 pub const ACTION_SET: &'static str = "set";
 pub const ACTION_UNSET: &'static str = "unset";
@@ -70,7 +76,7 @@ impl TimeseriesActionPipe {
     fn handle_action_record(&mut self, record: Record) -> super::Result<()> {
         let action = record
             .get(ACTION_FIELD.deref())
-            .ok_or_else(|| super::Error::InvalidRecord("Missing action field".to_string()))?;
+            .ok_or_else(|| super::Error::FieldNotFound(ACTION_FIELD_STR))?;
 
         let action = action.ensure_string()?;
         let action = action.as_ref();
@@ -79,13 +85,13 @@ impl TimeseriesActionPipe {
             ACTION_SET => {
                 let name = record
                     .get(NAME_FIELD.deref())
-                    .ok_or_else(|| super::Error::InvalidRecord("Missing name field".to_string()))?;
+                    .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
 
                 let name = name.ensure_string()?.clone();
 
-                let value = record.get(VALUE_FIELD.deref()).ok_or_else(|| {
-                    super::Error::InvalidRecord("Missing value field".to_string())
-                })?;
+                let value = record
+                    .get(VALUE_FIELD.deref())
+                    .ok_or_else(|| super::Error::FieldNotFound(VALUE_FIELD_STR))?;
 
                 let value = value.cast_string()?;
 
@@ -101,7 +107,7 @@ impl TimeseriesActionPipe {
             ACTION_UNSET => {
                 let name = record
                     .get(NAME_FIELD.deref())
-                    .ok_or_else(|| super::Error::InvalidRecord("Missing name field".to_string()))?;
+                    .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
 
                 let name = name.ensure_string()?.clone();
 
@@ -116,7 +122,7 @@ impl TimeseriesActionPipe {
             ACTION_DELETE => {
                 let name = record
                     .get(NAME_FIELD.deref())
-                    .ok_or_else(|| super::Error::InvalidRecord("Missing name field".to_string()))?;
+                    .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
 
                 let name = name.ensure_string()?.clone();
 
@@ -127,7 +133,7 @@ impl TimeseriesActionPipe {
             ACTION_UNDELETE => {
                 let name = record
                     .get(NAME_FIELD.deref())
-                    .ok_or_else(|| super::Error::InvalidRecord("Missing name field".to_string()))?;
+                    .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
 
                 let name = name.ensure_string()?.clone();
 
@@ -142,10 +148,7 @@ impl TimeseriesActionPipe {
                 self.labels_to_remove.clear();
             }
             _ => {
-                return Err(super::Error::InvalidRecord(format!(
-                    "Invalid action: {}",
-                    action
-                )));
+                return Err(super::Error::InvalidAction(action.to_string()));
             }
         }
 
@@ -155,14 +158,14 @@ impl TimeseriesActionPipe {
     fn transform(&self, record: &mut Record) -> super::Result<()> {
         let labels = record
             .get_mut(&super::LABELS_FIELD)
-            .ok_or_else(|| super::Error::InvalidRecord("Missing labels field".to_string()))?;
+            .ok_or_else(|| super::Error::FieldNotFound(LABELS_FIELD_STR))?;
 
         for (label, value) in &self.labels_to_add {
-            labels.map_set(label.clone().into(), value.clone())?;
+            labels.map_set(label.into(), value.clone())?;
         }
 
         for label in &self.labels_to_remove {
-            let label: Value = label.clone().into();
+            let label: Value = label.into();
             labels.map_remove(&label)?;
         }
 

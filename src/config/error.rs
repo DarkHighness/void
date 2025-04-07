@@ -11,6 +11,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("Invalid config: {0}")]
     InvalidConfig(String),
+    #[error("Empty field: {0}.{1}")]
+    EmptyField(TagId, &'static str),
     #[error("Invalid config file format: {0}")]
     InvalidConfigFileFormat(String),
     #[error(transparent)]

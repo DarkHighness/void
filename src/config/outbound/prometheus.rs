@@ -32,11 +32,11 @@ impl PrometheusConfig {}
 impl Verify for PrometheusConfig {
     fn verify(&mut self) -> super::Result<()> {
         if self.address.is_empty() {
-            return Err(super::Error::InvalidConfig("address is empty".into()));
+            return Err(super::Error::EmptyField((&self.tag).into(), "address"));
         }
 
         if self.inbounds.is_empty() {
-            return Err(super::Error::InvalidConfig("inbounds is empty".into()));
+            return Err(super::Error::EmptyField((&self.tag).into(), "inbounds"));
         }
 
         Ok(())

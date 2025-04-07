@@ -19,13 +19,13 @@ pub struct TimeseriesActionPipeConfig {
 impl Verify for TimeseriesActionPipeConfig {
     fn verify(&mut self) -> super::Result<()> {
         if self.data_inbounds.is_empty() {
-            return Err(super::Error::InvalidConfig(
-                "TimeseriesActionPipeConfig must have at least one data inbound".to_string(),
-            ));
+            return Err(super::Error::EmptyField((&self.tag).into(), "inbounds"));
         }
+
         if self.control_inbounds.is_empty() {
-            return Err(super::Error::InvalidConfig(
-                "TimeseriesActionPipeConfig must have at least one control inbound".to_string(),
+            return Err(super::Error::EmptyField(
+                (&self.tag).into(),
+                "control_inbounds",
             ));
         }
         Ok(())

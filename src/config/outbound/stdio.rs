@@ -27,7 +27,7 @@ pub struct StdioOutboundConfig {
 impl Verify for StdioOutboundConfig {
     fn verify(&mut self) -> super::Result<()> {
         if self.r#inbounds.is_empty() {
-            return Err(super::Error::InvalidConfig("inbounds is empty".into()));
+            return Err(super::Error::EmptyField((&self.tag).into(), "inbounds"));
         }
 
         Ok(())

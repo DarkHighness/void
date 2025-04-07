@@ -7,6 +7,10 @@ use crate::core::types::Record;
 pub enum Error {
     #[error("Invalid record: {0}")]
     InvalidRecord(String),
+    #[error("Invalid action: {0}")]
+    InvalidAction(String),
+    #[error("Field not found: {0}")]
+    FieldNotFound(&'static str),
     #[error(transparent)]
     TypeError(#[from] crate::core::types::Error),
     #[error(transparent)]

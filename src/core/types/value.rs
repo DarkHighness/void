@@ -262,6 +262,12 @@ impl From<super::string::Symbol> for Value {
     }
 }
 
+impl From<&super::string::Symbol> for Value {
+    fn from(string: &super::string::Symbol) -> Self {
+        Value::String(string.clone())
+    }
+}
+
 impl From<HashMap<Value, Value>> for Value {
     fn from(map: HashMap<Value, Value>) -> Self {
         Value::Map(map)
@@ -311,12 +317,6 @@ impl FromIterator<(Value, Value)> for Value {
 impl From<Vec<Value>> for Value {
     fn from(array: Vec<Value>) -> Self {
         Value::Array(array)
-    }
-}
-
-impl From<&Symbol> for Value {
-    fn from(symbol: &Symbol) -> Self {
-        Value::String(symbol.clone())
     }
 }
 

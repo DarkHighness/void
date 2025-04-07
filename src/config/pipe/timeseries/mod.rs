@@ -115,17 +115,17 @@ pub struct TimeseriesPipeConfig {
 impl Verify for TimeseriesPipeConfig {
     fn verify(&mut self) -> super::Result<()> {
         if self.inbounds.is_empty() {
-            return Err(super::Error::InvalidConfig("inbounds is empty".into()));
+            return Err(super::Error::EmptyField((&self.tag).into(), "inbounds"));
         }
 
         if self.labels.is_empty() {
-            return Err(super::Error::InvalidConfig("labels is empty".into()));
+            return Err(super::Error::EmptyField((&self.tag).into(), "labels"));
         }
 
         match self.values {
             Some(ref values) => {
                 if values.is_empty() {
-                    return Err(super::Error::InvalidConfig("values is empty".into()));
+                    return Err(super::Error::EmptyField((&self.tag).into(), "values"));
                 }
             }
             None => {
