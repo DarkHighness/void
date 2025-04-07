@@ -1,7 +1,6 @@
 pub mod annotate;
 
 pub use annotate::TimeseriesAnnotatePipe;
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use tokio::task::JoinHandle;
 
 pub use super::{Error, Result};
@@ -251,26 +250,22 @@ impl TimeseriesPipe {
         let handle = tokio::task::Builder::new()
             .name(&format!("{}-transform", self.tag))
             .spawn(async move {
-                let record_vecs = record
-                    .into_par_iter()
+                record
+                    .into_iter()
                     .map(|r| inner.transform(r))
                     .filter_map(|r| match r {
-                        Ok(records) => Some(records.into_par_iter()),
+                        Ok(records) => Some(records),
                         Err(e) => {
                             warn!("{}: error transforming record: {}", inner.tag, e);
                             None
                         }
                     })
-                    .flat_map(|records| records.into_par_iter())
-                    .collect_vec_list();
-
-                for records in record_vecs {
-                    for record in records {
-                        if let Err(e) = inner.outbound.send(record.clone()) {
+                    .flatten()
+                    .for_each(|record| {
+                        if let Err(e) = inner.outbound.send(record) {
                             warn!("{}: error sending record: {}", inner.tag, e);
                         }
-                    }
-                }
+                    });
             })?;
 
         Ok(handle)

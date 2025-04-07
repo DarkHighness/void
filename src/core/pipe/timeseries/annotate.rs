@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use dashmap::{DashMap, DashSet};
 use log::{error, info};
 use once_cell::sync::Lazy;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tokio::task::JoinHandle;
 
 use crate::{
@@ -208,8 +207,8 @@ impl TimeseriesAnnotatePipe {
         let handle = tokio::task::Builder::new()
             .name(&format!("{}-transform", self.tag))
             .spawn(async move {
-                let record_vecs = record
-                    .into_par_iter()
+                record
+                    .into_iter()
                     .filter_map(|record| match inner.transform(record) {
                         Ok(record) => Some(record),
                         Err(e) => {
@@ -217,15 +216,11 @@ impl TimeseriesAnnotatePipe {
                             None
                         }
                     })
-                    .collect_vec_list();
-
-                for records in record_vecs {
-                    for record in records {
-                        if let Err(e) = outbound.send(record) {
+                    .for_each(|r| {
+                        if let Err(e) = outbound.send(r) {
                             error!("{}: failed to send record: {:?}", inner.tag, e);
                         }
-                    }
-                }
+                    });
             })?;
 
         Ok(handle)

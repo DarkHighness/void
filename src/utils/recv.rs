@@ -4,7 +4,6 @@ use crate::core::{manager::TaggedReceiver, tag::TagId, types::Record};
 use futures::StreamExt;
 use log::{debug, warn};
 use miette::Diagnostic;
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use thiserror::Error;
 use tokio::sync::broadcast::error::RecvError;
 use tokio_util::sync::CancellationToken;
@@ -78,7 +77,7 @@ pub async fn recv_batch(
     let mut time_left = timeout;
 
     let mut records = inbounds
-        .par_iter_mut()
+        .iter_mut()
         .map(|inbound| {
             let mut buffer = Vec::new();
             while let Ok(record) = inbound.try_recv() {
@@ -97,11 +96,6 @@ pub async fn recv_batch(
         .collect::<Vec<_>>();
 
     if records.len() >= num_records {
-        warn!(
-            "{}: sync recv overflow {} records, returning...",
-            who,
-            records.len()
-        );
         return Ok(records);
     }
 

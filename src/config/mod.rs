@@ -69,11 +69,6 @@ impl Config {
             .set(config.global.clone())
             .expect("Failed to set global config");
 
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(config.global.rayon_thread_count)
-            .build_global()
-            .expect("Failed to build global rayon thread pool");
-
         Ok(config)
     }
 }
