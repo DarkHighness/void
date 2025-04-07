@@ -19,6 +19,8 @@ pub enum Error {
     Send(#[from] tokio::sync::broadcast::error::SendError<Record>),
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

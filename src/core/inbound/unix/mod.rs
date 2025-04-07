@@ -1,20 +1,18 @@
-pub(crate) mod connection;
+// pub(crate) mod connection;
 
 use std::path::PathBuf;
 
 use async_trait::async_trait;
-use connection::UnixConnection;
+// use connection::UnixConnection;
 use log::info;
-use tokio::{
-    net::UnixListener,
-    task::JoinHandle,
-};
+use tokio::{net::UnixListener, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{inbound::unix::UnixSocketConfig, ProtocolConfig},
     core::{
         actor::Actor,
+        inbound::instance::ReaderBasedInstance,
         manager::{ChannelGraph, TaggedSender},
         tag::{HasTag, TagId},
     },
@@ -107,14 +105,14 @@ impl Actor for UnixSocketInbound {
             _ = ctx.cancelled() => return Ok(()),
             Ok((stream, addr)) = new_connection => {
                 info!("inbound \"{}\" accept new connection \"{:?}\" ", self.tag, addr);
-                let conn = UnixConnection::try_create_from(
+                let handle = ReaderBasedInstance::try_create_from(
                     self.tag.clone(),
+                    format!("unix({:?})", addr),
                     stream,
                     self.protocol.clone(),
                     self.outbound.clone(),
                     self.ctx.clone(),
                 )?;
-                let handle = conn.spawn();
                 self.handles.push(handle);
                 info!("inbound \"{}\" spawn a new connection \"{:?}\" ", self.tag, addr);
             }

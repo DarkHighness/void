@@ -13,6 +13,7 @@ pub mod r#type;
 
 use async_trait::async_trait;
 pub use error::{Error, Result};
+use log::{info, warn};
 use r#type::WriteRequest;
 use tokio_util::sync::CancellationToken;
 
@@ -87,6 +88,23 @@ impl Actor for PrometheusOutbound {
             };
 
         let tss = r#type::transform_timeseries(records)?;
+
+        let last_timestamp = tss
+            .iter()
+            .flat_map(|ts| ts.samples.iter().map(|s| s.timestamp))
+            .max()
+            .unwrap_or_default();
+        let last_timestamp = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(last_timestamp)
+            .expect("Invalid timestamp");
+        let now = chrono::Utc::now();
+        let time_diff = now.signed_duration_since(last_timestamp);
+        let time_diff_seconds = time_diff.num_seconds();
+        if time_diff_seconds > 5 {
+            warn!(
+                "{}: last timestamp is {} seconds ago, lagging...",
+                self.tag, time_diff_seconds
+            );
+        }
         let request: WriteRequest = tss.into();
         let request = request.build_request(&self.client, &self.auth, &self.address, "void")?;
 

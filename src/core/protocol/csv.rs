@@ -12,7 +12,7 @@ use crate::{
 
 const BUFFER_SIZE: usize = 8192;
 
-pub struct CSVProtocol<R> {
+pub struct CSVProtocolParser<R> {
     reader: R,
     csv_reader: csv_core::Reader,
 
@@ -27,7 +27,7 @@ pub struct CSVProtocol<R> {
     end_buf: Vec<usize>,
 }
 
-impl<R> CSVProtocol<R>
+impl<R> CSVProtocolParser<R>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
@@ -109,7 +109,7 @@ where
 }
 
 #[async_trait]
-impl<R> super::ProtocolParser for CSVProtocol<R>
+impl<R> super::ProtocolParser for CSVProtocolParser<R>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
@@ -204,7 +204,7 @@ mod tests {
         let data = "name,age,active\nAlice,30,true\nBob,25,false\n";
         let reader = Cursor::new(data);
 
-        let mut parser = CSVProtocol::try_create_from(reader, create_test_config()).unwrap();
+        let mut parser = CSVProtocolParser::try_create_from(reader, create_test_config()).unwrap();
 
         // First record
         let record = parser.read_next().await.unwrap();
@@ -267,7 +267,7 @@ mod tests {
         config.has_header = false;
 
         let reader = Cursor::new(data);
-        let mut parser = CSVProtocol::try_create_from(reader, config).unwrap();
+        let mut parser = CSVProtocolParser::try_create_from(reader, config).unwrap();
 
         // First record
         let record = parser.read_next().await.unwrap();
@@ -286,7 +286,7 @@ mod tests {
         config.fields[2].optional = true; // active is optional
 
         let reader = Cursor::new(data);
-        let mut parser = CSVProtocol::try_create_from(reader, config).unwrap();
+        let mut parser = CSVProtocolParser::try_create_from(reader, config).unwrap();
 
         // First record (missing active)
         let record = parser.read_next().await.unwrap();
@@ -310,7 +310,7 @@ mod tests {
         config.delimiter = ';';
 
         let reader = Cursor::new(data);
-        let mut parser = CSVProtocol::try_create_from(reader, config).unwrap();
+        let mut parser = CSVProtocolParser::try_create_from(reader, config).unwrap();
 
         // First record
         let record = parser.read_next().await.unwrap();
@@ -325,7 +325,7 @@ mod tests {
     async fn test_parse_errors() {
         let data = "name,age,active\nAlice,not_a_number,true\n";
         let reader = Cursor::new(data);
-        let mut parser = CSVProtocol::try_create_from(reader, create_test_config()).unwrap();
+        let mut parser = CSVProtocolParser::try_create_from(reader, create_test_config()).unwrap();
 
         // Parsing should fail because "not_a_number" is not an integer
         let result = parser.read_next().await;
@@ -341,7 +341,7 @@ mod tests {
         }
 
         let reader = Cursor::new(data);
-        let mut parser = CSVProtocol::try_create_from(reader, create_test_config()).unwrap();
+        let mut parser = CSVProtocolParser::try_create_from(reader, create_test_config()).unwrap();
 
         // Read all records
         let mut count = 0;

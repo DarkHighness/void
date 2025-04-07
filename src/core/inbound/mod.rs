@@ -2,6 +2,7 @@ use crate::config::{inbound::InboundConfig, ProtocolConfig};
 
 mod base;
 mod error;
+mod instance;
 mod unix;
 
 pub use base::Inbound;

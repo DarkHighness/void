@@ -45,9 +45,9 @@ fn default_timeseries_annotate_tag() -> PipeTagId {
 }
 
 fn default_timeseries_annotate_pipe_interval() -> Duration {
-    Duration::from_millis(200)
+    Duration::from_millis(100)
 }
 
 fn default_timeseries_annotate_pipe_buffer_size() -> usize {
-    4096 * 8
+    1024
 }

@@ -204,26 +204,29 @@ impl TimeseriesAnnotatePipe {
     fn transform_records(&self, record: Vec<Record>) -> super::Result<JoinHandle<()>> {
         let inner = self.inner.clone();
         let outbound = self.outbound.clone();
-        let handle = tokio::spawn(async move {
-            let record_vecs = record
-                .into_par_iter()
-                .filter_map(|record| match inner.transform(record) {
-                    Ok(record) => Some(record),
-                    Err(e) => {
-                        error!("{}: failed to transform record: {:?}", inner.tag, e);
-                        None
-                    }
-                })
-                .collect_vec_list();
 
-            for records in record_vecs {
-                for record in records {
-                    if let Err(e) = outbound.send(record) {
-                        error!("{}: failed to send record: {:?}", inner.tag, e);
+        let handle = tokio::task::Builder::new()
+            .name(&format!("{}-transform", self.tag))
+            .spawn(async move {
+                let record_vecs = record
+                    .into_par_iter()
+                    .filter_map(|record| match inner.transform(record) {
+                        Ok(record) => Some(record),
+                        Err(e) => {
+                            error!("{}: failed to transform record: {:?}", inner.tag, e);
+                            None
+                        }
+                    })
+                    .collect_vec_list();
+
+                for records in record_vecs {
+                    for record in records {
+                        if let Err(e) = outbound.send(record) {
+                            error!("{}: failed to send record: {:?}", inner.tag, e);
+                        }
                     }
                 }
-            }
-        });
+            })?;
 
         Ok(handle)
     }

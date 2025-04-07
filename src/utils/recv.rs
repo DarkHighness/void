@@ -51,7 +51,7 @@ pub async fn recv(
                     return Err(Error::ChannelClosed(tag))
                 },
                 (tag, Err(RecvError::Lagged(n))) => {
-                    warn!("{}: inbound lagged additional {}", tag, n);
+                    warn!("{}: inbound lagged {}", tag, n);
                     time_left = timeout.saturating_sub(now.elapsed());
                     continue 'body;
                 }
@@ -129,7 +129,7 @@ pub async fn recv_batch(
                     return Err(Error::ChannelClosed(tag))
                 },
                 (tag, Err(RecvError::Lagged(n))) => {
-                    warn!("{}: inbound lagged additional {}", tag, n);
+                    warn!("{}: inbound lagged {}", tag, n);
                     time_left = timeout.saturating_sub(now.elapsed());
 
                     i

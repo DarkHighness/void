@@ -247,28 +247,31 @@ impl TimeseriesPipe {
 
     fn transform_records(&self, record: Vec<Record>) -> super::Result<JoinHandle<()>> {
         let inner = self.inner.clone();
-        let handle = tokio::spawn(async move {
-            let record_vecs = record
-                .into_par_iter()
-                .map(|r| inner.transform(r))
-                .filter_map(|r| match r {
-                    Ok(records) => Some(records.into_par_iter()),
-                    Err(e) => {
-                        warn!("{}: error transforming record: {}", inner.tag, e);
-                        None
-                    }
-                })
-                .flat_map(|records| records.into_par_iter())
-                .collect_vec_list();
 
-            for records in record_vecs {
-                for record in records {
-                    if let Err(e) = inner.outbound.send(record.clone()) {
-                        warn!("{}: error sending record: {}", inner.tag, e);
+        let handle = tokio::task::Builder::new()
+            .name(&format!("{}-transform", self.tag))
+            .spawn(async move {
+                let record_vecs = record
+                    .into_par_iter()
+                    .map(|r| inner.transform(r))
+                    .filter_map(|r| match r {
+                        Ok(records) => Some(records.into_par_iter()),
+                        Err(e) => {
+                            warn!("{}: error transforming record: {}", inner.tag, e);
+                            None
+                        }
+                    })
+                    .flat_map(|records| records.into_par_iter())
+                    .collect_vec_list();
+
+                for records in record_vecs {
+                    for record in records {
+                        if let Err(e) = inner.outbound.send(record.clone()) {
+                            warn!("{}: error sending record: {}", inner.tag, e);
+                        }
                     }
                 }
-            }
-        });
+            })?;
 
         Ok(handle)
     }
