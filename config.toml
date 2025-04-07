@@ -15,13 +15,13 @@ type = "stdio"
 inbounds = ["pipe:timeseries_action"]
 disabled = false
 
-# [[outbounds]]
-# type = "prometheus"
-# inbounds = ["pipe:timeseries_action"]
-# address = "env:PROMETHEUS_ADDRESS"
-# interval = "100ms"
-# auth = { type = "basic", username = "admin", password = "env:PASSWORD" }
-# disabled = true
+[[outbounds]]
+type = "prometheus"
+inbounds = ["pipe:timeseries_action"]
+address = "env:PROMETHEUS_ADDRESS"
+interval = "100ms"
+auth = { type = "basic", username = "admin", password = "env:PASSWORD" }
+disabled = false
 
 [[pipes]]
 type = "timeseries"

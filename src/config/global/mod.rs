@@ -7,7 +7,7 @@ pub struct GlobalConfig {
 }
 
 fn default_channel_buffer_size() -> usize {
-    4096
+    128
 }
 
 pub static GLOBAL_CONFIG: once_cell::sync::OnceCell<GlobalConfig> =

@@ -56,18 +56,15 @@ impl<T> Deref for Env<T> {
     }
 }
 
-impl<T> Serialize for Env<T> {
+impl<T> Serialize for Env<T>
+where
+    T: Serialize,
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        let key = match self.r#type {
-            EnvStringType::Env => format!("env:{}", self.key),
-            EnvStringType::File => format!("file:{}", self.key),
-            EnvStringType::String => self.key.clone(),
-        };
-
-        serializer.serialize_str(&key)
+        T::serialize(&self.value, serializer)
     }
 }
 
@@ -126,10 +123,6 @@ where
     T: std::fmt::Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.r#type {
-            EnvStringType::Env => write!(f, "env:{}", self.key),
-            EnvStringType::File => write!(f, "file:{}", self.key),
-            EnvStringType::String => write!(f, "{}", self.key),
-        }
+        write!(f, "{}", self.value)
     }
 }
