@@ -95,54 +95,56 @@ pub async fn recv_batch(
         .flatten()
         .collect::<Vec<_>>();
 
+    return Ok(records);
+
     // if records.len() >= num_records {
     //     return Ok(records);
     // }
 
-    loop {
-        let futs = inbounds.iter_mut().map(|inbound| {
-            let fut = async move { (inbound.tag().clone(), inbound.recv().await) };
+    // loop {
+    //     let futs = inbounds.iter_mut().map(|inbound| {
+    //         let fut = async move { (inbound.tag().clone(), inbound.recv().await) };
 
-            Box::pin(fut)
-        });
+    //         Box::pin(fut)
+    //     });
 
-        let last_active_index = tokio::select! {
-            (record, i, _) = futures::future::select_all(futs) => match record {
-                (_, Ok(record)) => {
-                  time_left = timeout.saturating_sub(now.elapsed());
+    //     let last_active_index = tokio::select! {
+    //         (record, i, _) = futures::future::select_all(futs) => match record {
+    //             (_, Ok(record)) => {
+    //               time_left = timeout.saturating_sub(now.elapsed());
 
-                  records.push(record);
+    //               records.push(record);
 
-                  if records.len() >= num_records {
-                      return Ok(records);
-                  }
+    //               if records.len() >= num_records {
+    //                   return Ok(records);
+    //               }
 
-                  i
-                },
-                (tag, Err(RecvError::Closed)) => {
-                    return Err(Error::ChannelClosed(tag))
-                },
-                (tag, Err(RecvError::Lagged(n))) => {
-                    warn!("{}: inbound lagged {}", tag, n);
-                    time_left = timeout.saturating_sub(now.elapsed());
+    //               i
+    //             },
+    //             (tag, Err(RecvError::Closed)) => {
+    //                 return Err(Error::ChannelClosed(tag))
+    //             },
+    //             (tag, Err(RecvError::Lagged(n))) => {
+    //                 warn!("{}: inbound lagged {}", tag, n);
+    //                 time_left = timeout.saturating_sub(now.elapsed());
 
-                    i
-                }
-            },
-            _ = tokio::time::sleep(time_left) => match records.len() {
-                0 => return Err(Error::Timeout),
-                _ => return Ok(records),
-            },
-            _ = ctx.cancelled() => {
-                return Err(Error::Canceled);
-            }
-        };
+    //                 i
+    //             }
+    //         },
+    //         _ = tokio::time::sleep(time_left) => match records.len() {
+    //             0 => return Err(Error::Timeout),
+    //             _ => return Ok(records),
+    //         },
+    //         _ = ctx.cancelled() => {
+    //             return Err(Error::Canceled);
+    //         }
+    //     };
 
-        while let Some(record) = inbounds[last_active_index].try_recv().ok() {
-            records.push(record);
-            if records.len() >= num_records || now.elapsed() >= timeout {
-                return Ok(records);
-            }
-        }
-    }
+    //     while let Some(record) = inbounds[last_active_index].try_recv().ok() {
+    //         records.push(record);
+    //         if records.len() >= num_records || now.elapsed() >= timeout {
+    //             return Ok(records);
+    //         }
+    //     }
+    // }
 }

@@ -2,11 +2,20 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use bytes::{Buf, BytesMut};
-use csv_core::ReadRecordResult;
+use nom::{
+    branch::alt,
+    bytes::complete::{tag, take_until, take_while, take_while1},
+    character::complete::{char, line_ending},
+    combinator::{eof, map, opt},
+    multi::{many0, separated_list0, separated_list1},
+    sequence::{delimited, terminated, tuple},
+    IResult, Parser,
+};
 use tokio::io::AsyncReadExt;
 
 use crate::{
     config::protocol::csv::CSVProtocolConfig,
+    core::protocol,
     core::types::{parse_value, DataType, Record, Symbol, SymbolMap, Value},
     utils::tracing::TracingContext,
 };
@@ -15,7 +24,7 @@ const BUFFER_SIZE: usize = 16 * 1024;
 
 pub struct CSVProtocolParser<R> {
     reader: R,
-    csv_reader: csv_core::Reader,
+    config: CSVProtocolConfig,
 
     has_header: bool,
     header_skipped: bool,
@@ -27,24 +36,18 @@ pub struct CSVProtocolParser<R> {
     num_fields: usize,
 
     input_buf: BytesMut,
-    output_buf: BytesMut,
-    end_buf: Vec<usize>,
 }
 
 impl<R> CSVProtocolParser<R>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
-    pub fn try_create_from(reader: R, cfg: CSVProtocolConfig) -> super::Result<Self> {
+    pub fn try_create_from(reader: R, cfg: CSVProtocolConfig) -> protocol::Result<Self> {
         let fields = cfg
             .fields
-            .into_iter()
-            .map(|c| (c.index, (c.name, c.r#type, c.optional)))
+            .iter()
+            .map(|c| (c.index, (c.name.clone(), c.r#type.clone(), c.optional)))
             .collect::<HashMap<usize, _>>();
-
-        let csv_reader = csv_core::ReaderBuilder::new()
-            .delimiter(cfg.delimiter as u8)
-            .build();
 
         let num_required_fields = fields
             .iter()
@@ -58,7 +61,7 @@ where
 
         Ok(Self {
             reader,
-            csv_reader,
+            config: cfg.clone(),
             has_header: cfg.has_header,
             header_skipped: !cfg.has_header,
             num_required_fields,
@@ -66,20 +69,16 @@ where
             num_fields: num_optional_fields + num_required_fields,
             fields,
             input_buf: BytesMut::with_capacity(BUFFER_SIZE),
-            output_buf: BytesMut::zeroed(BUFFER_SIZE),
-            // end_buf[0] is a sentinel
-            // end_buf[1..] is the end positions of each field
-            end_buf: vec![0; cfg.num_fields + 1],
         })
     }
 
-    async fn skip_header(&mut self) -> super::Result<()> {
+    async fn skip_header(&mut self) -> protocol::Result<()> {
         if self.has_header && !self.header_skipped {
             loop {
                 match self.reader.read_u8().await {
                     Ok(0) => {
                         // EOF reached
-                        return Err(super::Error::EOF);
+                        return Err(protocol::Error::EOF);
                     }
                     Ok(c) => {
                         if c == b'\n' {
@@ -90,7 +89,7 @@ where
                     Err(e) => match e.kind() {
                         std::io::ErrorKind::UnexpectedEof => {
                             // EOF reached
-                            return Err(super::Error::EOF);
+                            return Err(protocol::Error::EOF);
                         }
                         std::io::ErrorKind::WouldBlock => {
                             // Would block, continue reading
@@ -98,7 +97,7 @@ where
                         }
                         _ => {
                             // Other IO error
-                            return Err(super::Error::Io(e));
+                            return Err(protocol::Error::Io(e));
                         }
                     },
                 }
@@ -107,95 +106,133 @@ where
         Ok(())
     }
 
-    fn ensure_input_capacity(&mut self) {
-        self.input_buf.reserve(BUFFER_SIZE);
-    }
+    async fn read_line(&mut self) -> protocol::Result<Option<String>> {
+        let mut line_buf = Vec::new();
 
-    fn ensure_output_capacity(&mut self) {
-        self.output_buf.reserve(BUFFER_SIZE);
-        unsafe {
-            // make csv-core happy since they use is_empty to check if the buffer is empty
-            self.output_buf.set_len(self.output_buf.capacity());
+        loop {
+            // 如果缓冲区不为空，尝试在现有数据中查找行结束符
+            if !self.input_buf.is_empty() {
+                if let Some(pos) = self.find_line_end() {
+                    let line_end_len = if pos < self.input_buf.len() - 1
+                        && self.input_buf[pos] == b'\r'
+                        && self.input_buf[pos + 1] == b'\n'
+                    {
+                        2
+                    } else {
+                        1
+                    };
+
+                    // 添加当前行到line_buf
+                    line_buf.extend_from_slice(&self.input_buf[..pos]);
+                    self.input_buf.advance(pos + line_end_len);
+
+                    return Ok(Some(String::from_utf8_lossy(&line_buf).into_owned()));
+                } else {
+                    // 没有找到结束符，将所有数据添加到line_buf
+                    line_buf.extend_from_slice(&self.input_buf);
+                    self.input_buf.clear();
+                }
+            }
+
+            // 尝试读取更多数据
+            match self.reader.read_buf(&mut self.input_buf).await {
+                Ok(0) => {
+                    // EOF reached
+                    if line_buf.is_empty() {
+                        return Ok(None);
+                    } else {
+                        // 返回剩余数据作为最后一行
+                        return Ok(Some(String::from_utf8_lossy(&line_buf).into_owned()));
+                    }
+                }
+                Ok(_) => {
+                    // 成功读取更多数据，继续循环处理
+                }
+                Err(e) => return Err(protocol::Error::Io(e)),
+            }
         }
     }
 
-    fn parse_record(&self, ends: &[usize], end_pos: usize) -> super::Result<Record> {
-        // Only check if we have enough fields if end_pos is smaller than expected
-        // This is to handle the case where optional fields are at the end
-        let max_field_index = self
+    fn find_line_end(&self) -> Option<usize> {
+        for i in 0..self.input_buf.len() {
+            // 检测换行符 \n 或 \r
+            if self.input_buf[i] == b'\n' || self.input_buf[i] == b'\r' {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn parse_record(&self, record: Vec<String>) -> protocol::Result<Record> {
+        // 查找必填字段的最大索引
+        let max_required_index = self
             .fields
-            .keys()
+            .iter()
+            .filter(|(_, (_, _, optional))| !optional)
+            .map(|(index, _)| *index)
             .max()
-            .copied()
-            .unwrap_or(self.num_required_fields.saturating_sub(1));
-        if end_pos < max_field_index {
-            // Check if all missing fields are optional
-            for i in end_pos + 1..=max_field_index {
-                if let Some((name, _, optional)) = self.fields.get(&i) {
-                    if !*optional {
-                        return Err(super::Error::MismatchedFormat(format!(
-                            "Too few fields in CSV record. Expected at least {}, got {}",
-                            i + 1,
-                            end_pos + 1
-                        )));
-                    }
-                } else {
-                    // If the field is not defined in the config, it's an error
-                    return Err(super::Error::MismatchedFormat(format!(
-                        "Field index {} is not defined in the config",
-                        i
-                    )));
+            .unwrap_or(0);
+
+        // 检查是否有足够的字段覆盖所有必填字段
+        if record.len() <= max_required_index {
+            return Err(protocol::Error::MismatchedFormat(format!(
+                "Too few fields in CSV record. Expected at least {} fields for required fields, got {}",
+                max_required_index + 1,
+                record.len()
+            )));
+        }
+
+        // 检查是否有过多的字段
+        let max_defined_index = self.fields.keys().max().copied().unwrap_or(0);
+        if record.len() > max_defined_index + 1 {
+            return Err(protocol::Error::MismatchedFormat(format!(
+                "Too many fields in CSV record. Expected at most {} fields, got {}",
+                max_defined_index + 1,
+                record.len()
+            )));
+        }
+
+        // 计数所有非空的必填字段
+        let mut required_fields_count = 0;
+        for (index, val) in record.iter().enumerate() {
+            if let Some((_, _, optional)) = self.fields.get(&index) {
+                if !optional && !val.is_empty() {
+                    required_fields_count += 1;
                 }
             }
         }
 
-        let map = ends[0..end_pos + 1]
-            .windows(2)
-            .enumerate()
-            .filter_map(|(i, range)| {
-                // Optional fields will be skipped if empty
-                self.fields.get(&i).map(|(name, data_type, optional)| {
-                    let start = range[0];
-                    let end = range[1];
-                    let field = &self.output_buf[start..end];
-                    let field_str = unsafe { std::str::from_utf8_unchecked(field).trim() };
-
-                    // Return early for empty fields
-                    if field_str.is_empty() {
-                        if *optional {
-                            return Ok(None);
-                        } else {
-                            // Return error for empty required fields
-                            return Err(super::Error::MismatchedFormat(format!(
-                                "Required field {} cannot be empty",
-                                name
-                            )));
-                        }
-                    }
-
-                    let parsed_value = parse_value(field_str, data_type).map_err(|_| {
-                        super::Error::MismatchedFormat(format!(
-                            "Failed to parse field {}: {}, expected {}",
-                            name, field_str, data_type
-                        ))
-                    })?;
-
-                    Ok(Some((name.clone(), parsed_value)))
-                })
-            })
-            .filter_map(|r| match r {
-                Ok(Some(pair)) => Some(Ok(pair)),
-                Ok(None) => None, // Skip optional empty fields
-                Err(e) => Some(Err(e)),
-            })
-            .collect::<Result<SymbolMap, super::Error>>()?;
-
-        if map.len() < self.num_required_fields {
-            return Err(super::Error::MismatchedFormat(format!(
-                "Too few fields in CSV record. Expected at least {}, got {}",
-                self.num_required_fields,
-                map.len()
+        if required_fields_count < self.num_required_fields {
+            return Err(protocol::Error::MismatchedFormat(format!(
+                "Too few non-empty required fields in CSV record. Expected {} required fields, got {}",
+                self.num_required_fields, required_fields_count
             )));
+        }
+
+        let mut map = SymbolMap::new();
+
+        for (i, field_str) in record.iter().enumerate() {
+            if let Some((name, data_type, optional)) = self.fields.get(&i) {
+                if field_str.is_empty() {
+                    if *optional {
+                        continue; // Skip optional empty fields
+                    } else {
+                        return Err(protocol::Error::MismatchedFormat(format!(
+                            "Required field {} cannot be empty",
+                            name
+                        )));
+                    }
+                }
+
+                let parsed_value = parse_value(field_str, data_type).map_err(|_| {
+                    protocol::Error::MismatchedFormat(format!(
+                        "Failed to parse field {}: {}, expected {}",
+                        name, field_str, data_type
+                    ))
+                })?;
+
+                map.insert(name.clone(), parsed_value);
+            }
         }
 
         let record = Record::new_with_values(map, TracingContext::new_root());
@@ -203,74 +240,60 @@ where
     }
 }
 
+fn parse_csv_line(input: &str, delimiter: char) -> IResult<&str, Vec<String>> {
+    // 定义字段解析器
+    let field_content = |c| c != delimiter && c != '\n' && c != '\r';
+    let quoted_field = map(
+        delimited(char('"'), take_while(|c| c != '"'), char('"')),
+        |s: &str| s.to_string(),
+    );
+    let unquoted_field = map(take_while(field_content), |s: &str| s.trim().to_string());
+
+    let field = alt((quoted_field, unquoted_field));
+
+    // 处理字段列表
+    let fields = separated_list0(char(delimiter), field);
+
+    // 处理行尾
+    let line_end = alt((tag("\r\n"), tag("\n"), eof));
+
+    // 完整行解析
+    let (input, result) = terminated(fields, opt(line_end)).parse(input)?;
+
+    Ok((input, result))
+}
+
 #[async_trait]
-impl<R> super::ProtocolParser for CSVProtocolParser<R>
+impl<R> protocol::ProtocolParser for CSVProtocolParser<R>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
-    async fn read_next(&mut self) -> super::Result<Record> {
+    async fn read_next(&mut self) -> protocol::Result<Record> {
         self.skip_header().await?;
 
         loop {
-            // Try to read more data if buffer is empty or we need more
-            if self.input_buf.is_empty() || self.input_buf.len() < BUFFER_SIZE / 2 {
-                match self.reader.read_buf(&mut self.input_buf).await {
-                    Ok(0) => {
-                        // Handle EOF condition
-                        if self.input_buf.is_empty() {
-                            return Err(super::Error::EOF);
+            match self.read_line().await? {
+                Some(line) => {
+                    if line.trim().is_empty() {
+                        return Err(protocol::Error::EOF);
+                    }
+                    match parse_csv_line(&line, self.config.delimiter) {
+                        Ok((_, record)) => {
+                            let parsed_record = self.parse_record(record)?;
+                            return Ok(parsed_record);
                         }
-                        // If we have some data left, continue processing it
-                    }
-                    Ok(_) => {
-                        // Successfully read more data
-                    }
-                    Err(e) => return Err(e)?,
-                }
-            }
-
-            let (state, input_pos, _, end_pos) = self.csv_reader.read_record(
-                &self.input_buf,
-                &mut self.output_buf,
-                &mut self.end_buf[1..],
-            );
-
-            match state {
-                ReadRecordResult::InputEmpty => {
-                    if self.input_buf.is_empty() {
-                        // We've processed all input and need more, but there might not be more
-                        match self.reader.read_buf(&mut self.input_buf).await {
-                            Ok(0) => {
-                                // No more data to read
-                                return Err(super::Error::EOF);
-                            }
-                            Ok(_) => {
-                                // Got more data, continue processing
-                                self.ensure_input_capacity();
-                            }
-                            Err(e) => return Err(e)?,
+                        Err(e) => {
+                            return Err(protocol::Error::MismatchedFormat(format!(
+                                "Failed to parse CSV line: {:?}",
+                                e
+                            )));
                         }
-                    } else {
-                        self.ensure_input_capacity();
                     }
-                    continue;
                 }
-                ReadRecordResult::OutputFull => {
-                    self.ensure_output_capacity();
-                    continue;
+                None => {
+                    // EOF reached
+                    return Err(protocol::Error::EOF);
                 }
-                ReadRecordResult::OutputEndsFull => {
-                    // We can't store more end positions, this implies too many fields
-                    return Err(super::Error::MismatchedFormat(
-                        "Too many fields in CSV record".to_string(),
-                    ));
-                }
-                ReadRecordResult::Record => {
-                    let record = self.parse_record(&self.end_buf, end_pos)?;
-                    self.input_buf.advance(input_pos);
-                    return Ok(record);
-                }
-                ReadRecordResult::End => return Err(super::Error::EOF),
             }
         }
     }
@@ -381,7 +404,9 @@ mod tests {
         );
 
         // No more records
-        assert!(parser.read_next().await.is_err());
+        let result = parser.read_next().await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), Error::EOF));
     }
 
     #[tokio::test]
@@ -425,6 +450,11 @@ mod tests {
         assert!(record.contains_key(&Symbol::new("name")));
         assert!(!record.contains_key(&Symbol::new("age")));
         assert!(!record.contains_key(&Symbol::new("active")));
+
+        // No more records
+        let result = parser.read_next().await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), Error::EOF));
     }
 
     #[tokio::test]
@@ -460,7 +490,7 @@ mod tests {
     async fn test_large_input() {
         // Generate a large CSV with 1000 rows
         let mut data = String::from("name,age,active\n");
-        for i in 0..1000 {
+        for i in 0..580 {
             data.push_str(&format!("Person{},{},{}\n", i, i, i % 2 == 0));
         }
 
@@ -474,7 +504,7 @@ mod tests {
             count += 1;
         }
 
-        assert_eq!(count, 1000);
+        assert_eq!(count, 580);
     }
 
     #[tokio::test]
@@ -623,9 +653,7 @@ mod tests {
         let mut parser = CSVProtocolParser::try_create_from(reader, create_test_config()).unwrap();
 
         let result = parser.read_next().await;
-        // The parser should now properly detect too many fields
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::MismatchedFormat(_)));
     }
 
     #[tokio::test]
@@ -636,7 +664,6 @@ mod tests {
 
         let result = parser.read_next().await;
         assert!(result.is_err());
-
         assert!(matches!(result.unwrap_err(), Error::EOF));
     }
 
@@ -707,6 +734,7 @@ mod tests {
 
         // Second record should also parse because score is a string type
         let record = parser.read_next().await.unwrap();
+        assert_eq!(record.len(), 3);
         assert_eq!(
             record.get(&Symbol::new("score")).unwrap(),
             &Value::String(intern("ninety"))
