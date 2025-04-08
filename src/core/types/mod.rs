@@ -1,3 +1,4 @@
+mod conv;
 mod error;
 mod record;
 mod string;
