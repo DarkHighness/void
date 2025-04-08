@@ -58,3 +58,7 @@ paste = "1.0.15"
 num_cpus = "1.16.0"
 nom = "8"
 parquet = "54.3.1"
+arrow = "54.3.1"
+
+[dev-dependencies]
+tempfile = "3.19.1"

@@ -43,6 +43,14 @@ impl Record {
         }
     }
 
+    pub fn new_root() -> Self {
+        Self {
+            values: SymbolMap::new(),
+            attributes: AttributeMap::new(),
+            tracing_ctx: TracingContext::new_root(),
+        }
+    }
+
     pub fn new(ctx: Arc<TracingContext>) -> Self {
         let ctx = TracingContext::inherit(ctx);
         Self {
