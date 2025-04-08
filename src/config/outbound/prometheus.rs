@@ -68,12 +68,12 @@ where
 }
 
 fn default_prometheus_outbound_window_interval() -> std::time::Duration {
-    std::time::Duration::from_millis(10)
+    std::time::Duration::from_millis(5)
 }
 
 // We use a large buffer size and a long window interval to avoid
 // out of order time series data.
 // Which is sometimes acceptable, or you should enable serial mode in config
 fn default_prometheus_outbound_buffer_size() -> usize {
-    128
+    32
 }

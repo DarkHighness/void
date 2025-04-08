@@ -8,6 +8,8 @@ use super::Verify;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalConfig {
     #[serde(default = "default_channel_buffer_size")]
+    pub inbound_channel_buffer_size: usize,
+    #[serde(default = "default_channel_buffer_size")]
     pub channel_buffer_size: usize,
     #[serde(default = "default_serial_mode")]
     pub use_serial_mode: bool,
@@ -16,15 +18,23 @@ pub struct GlobalConfig {
 }
 
 fn default_channel_buffer_size() -> usize {
-    128
+    4096
 }
 
 fn default_serial_mode() -> bool {
-    true
+    false
 }
 
 pub static GLOBAL_CONFIG: once_cell::sync::OnceCell<GlobalConfig> =
     once_cell::sync::OnceCell::new();
+
+pub fn inbound_channel_buffer_size() -> usize {
+    GLOBAL_CONFIG
+        .get()
+        .map_or(default_channel_buffer_size(), |config| {
+            config.inbound_channel_buffer_size
+        })
+}
 
 pub fn channel_buffer_size() -> usize {
     GLOBAL_CONFIG
@@ -64,6 +74,7 @@ pub fn time_tracing_path() -> &'static Path {
 impl Default for GlobalConfig {
     fn default() -> Self {
         Self {
+            inbound_channel_buffer_size: default_channel_buffer_size(),
             channel_buffer_size: default_channel_buffer_size(),
             use_serial_mode: default_serial_mode(),
             time_tracing: None,

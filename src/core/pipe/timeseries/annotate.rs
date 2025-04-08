@@ -40,22 +40,100 @@ impl InnerState {
     }
 
     fn transform(&self, mut record: Record) -> super::Result<Record> {
-        let labels = record
+        let mut labels = record
             .get_mut(&LABELS_FIELD)
-            .ok_or_else(|| super::Error::FieldNotFound(LABELS_FIELD_STR))?;
+            .ok_or_else(|| super::Error::FieldNotFound(LABELS_FIELD_STR))?
+            .map_mut()?;
 
         for label in self.labels_to_add.iter() {
             let name = label.key().into();
             let value = label.value().clone();
-            labels.map_set(name, value)?;
+
+            labels.set(name, value);
         }
 
         for label in self.labels_to_remove.iter() {
             let name = label.clone().into();
-            labels.map_remove(&name)?;
+            let _ = labels.remove(&name);
         }
 
         Ok(record)
+    }
+
+    fn handle_action_record(&self, record: Record) -> super::Result<()> {
+        let action = record
+            .get(ACTION_FIELD.deref())
+            .ok_or_else(|| super::Error::FieldNotFound(ACTION_FIELD_STR))?;
+        let action_guard = action.string()?;
+        let action = action_guard.as_str();
+
+        match action {
+            ACTION_SET => {
+                let name = record
+                    .get(NAME_FIELD.deref())
+                    .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
+
+                let name = name.string()?.as_symbol().clone();
+                let value = record
+                    .get(VALUE_FIELD.deref())
+                    .ok_or_else(|| super::Error::FieldNotFound(VALUE_FIELD_STR))?;
+
+                let value = value.cast_string()?;
+
+                info!(
+                    "Timeseries {} will set label: {} = {}",
+                    self.tag, name, value
+                );
+
+                self.labels_to_add.insert(name, value);
+            }
+            ACTION_UNSET => {
+                let name = record
+                    .get(NAME_FIELD.deref())
+                    .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
+
+                let name_guard = name.string()?;
+                let name = name_guard.as_symbol();
+
+                info!("Timeseries {} will no longer set label: {}", self.tag, name);
+
+                self.labels_to_add.remove(name);
+            }
+            ACTION_DELETE => {
+                let name = record
+                    .get(NAME_FIELD.deref())
+                    .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
+
+                let name = name.string()?.as_symbol().clone();
+
+                info!("Timeseries {} will delete label: {}", self.tag, name);
+
+                self.labels_to_remove.insert(name);
+            }
+            ACTION_UNDELETE => {
+                let name = record
+                    .get(NAME_FIELD.deref())
+                    .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
+
+                let name_guard = name.string()?;
+                let name = name_guard.as_symbol();
+
+                info!("Timeseries {} will undelete label: {}", self.tag, name);
+
+                self.labels_to_remove.remove(name);
+            }
+            ACTION_CLEAR => {
+                info!("Timeseries {} will clear all actions", self.tag);
+
+                self.labels_to_add.clear();
+                self.labels_to_remove.clear();
+            }
+            _ => {
+                return Err(super::Error::InvalidAction(action.to_string()));
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -64,12 +142,12 @@ pub struct TimeseriesAnnotatePipe {
     tag: TagId,
 
     data_inbounds: Vec<TaggedReceiver>,
-    control_inbounds: Vec<TaggedReceiver>,
+    control_inbounds: Option<Vec<TaggedReceiver>>,
 
     inner: Arc<InnerState>,
 
     outbound: TaggedSender,
-    last_handle: Option<JoinHandle<()>>,
+    control_handle: Option<JoinHandle<()>>,
 
     interval: Duration,
     buffer_size: usize,
@@ -110,10 +188,10 @@ impl TimeseriesAnnotatePipe {
         let pipe = TimeseriesAnnotatePipe {
             tag: cfg.tag.into(),
             data_inbounds,
-            control_inbounds,
+            control_inbounds: Some(control_inbounds),
             inner,
             outbound,
-            last_handle: None,
+            control_handle: None,
             interval: cfg.interval,
             buffer_size: cfg.buffer_size,
         };
@@ -121,89 +199,7 @@ impl TimeseriesAnnotatePipe {
         Ok(pipe)
     }
 
-    fn handle_action_record(&mut self, record: Record) -> super::Result<()> {
-        let action = record
-            .get(ACTION_FIELD.deref())
-            .ok_or_else(|| super::Error::FieldNotFound(ACTION_FIELD_STR))?;
-
-        let action = action.ensure_string()?;
-        let action = action.as_ref();
-
-        match action {
-            ACTION_SET => {
-                let name = record
-                    .get(NAME_FIELD.deref())
-                    .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
-
-                let name = name.ensure_string()?.clone();
-
-                let value = record
-                    .get(VALUE_FIELD.deref())
-                    .ok_or_else(|| super::Error::FieldNotFound(VALUE_FIELD_STR))?;
-
-                let value = value.cast_string()?;
-
-                info!(
-                    "Timeseries {} will set label: {} = {}",
-                    self.tag(),
-                    name,
-                    value
-                );
-
-                self.inner.labels_to_add.insert(name, value);
-            }
-            ACTION_UNSET => {
-                let name = record
-                    .get(NAME_FIELD.deref())
-                    .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
-
-                let name = name.ensure_string()?;
-
-                info!(
-                    "Timeseries {} will no longer set label: {}",
-                    self.tag(),
-                    name
-                );
-
-                self.inner.labels_to_add.remove(name);
-            }
-            ACTION_DELETE => {
-                let name = record
-                    .get(NAME_FIELD.deref())
-                    .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
-
-                let name = name.ensure_string()?.clone();
-
-                info!("Timeseries {} will delete label: {}", self.tag(), name);
-
-                self.inner.labels_to_remove.insert(name);
-            }
-            ACTION_UNDELETE => {
-                let name = record
-                    .get(NAME_FIELD.deref())
-                    .ok_or_else(|| super::Error::FieldNotFound(NAME_FIELD_STR))?;
-
-                let name = name.ensure_string()?;
-
-                info!("Timeseries {} will undelete label: {}", self.tag(), name);
-
-                self.inner.labels_to_remove.remove(name);
-            }
-            ACTION_CLEAR => {
-                info!("Timeseries {} will clear all actions", self.tag());
-
-                self.inner.labels_to_add.clear();
-                self.inner.labels_to_remove.clear();
-            }
-            _ => {
-                return Err(super::Error::InvalidAction(action.to_string()));
-            }
-        }
-
-        Ok(())
-    }
-
-    fn transform_records(&self, mut records: Vec<Record>) -> super::Result<JoinHandle<()>> {
+    fn transform_records(&self, mut records: Vec<Record>) -> super::Result<()> {
         for record in records.iter_mut() {
             record.mark_timestamp(&format!("{}-{}", STAGE_PIPE_RECEIVED, self.tag));
         }
@@ -227,18 +223,13 @@ impl TimeseriesAnnotatePipe {
             record.mark_timestamp(&format!("{}-{}", STAGE_PIPE_PROCESSED, inner.tag));
         }
 
-        let handle = tokio::task::Builder::new()
-            .name(&format!("{}-send", self.tag))
-            .spawn(async move {
-                // send transformed records
-                transformed_records.into_iter().for_each(|r| {
-                    if let Err(e) = outbound.send(r) {
-                        error!("{}: failed to send record: {:?}", inner.tag, e);
-                    }
-                });
-            })?;
+        transformed_records.into_iter().for_each(|r| {
+            if let Err(e) = outbound.send(r) {
+                error!("{}: failed to send record: {:?}", inner.tag, e);
+            }
+        });
 
-        Ok(handle)
+        Ok(())
     }
 }
 
@@ -258,37 +249,50 @@ impl Actor for TimeseriesAnnotatePipe {
     ) -> std::result::Result<(), super::Error> {
         let tag = self.tag().clone();
 
-        tokio::select! {
-            biased;
-            records = recv_batch(&tag, &mut self.data_inbounds, Some(self.interval), self.buffer_size, ctx.clone()) => {
-                match records {
-                    Ok(records) => match use_serial_mode() {
-                        true => {
-                            if let Some(handle) = self.last_handle.take() {
-                                handle.await?;
+        if self.control_handle.is_none() {
+            let tag = self.tag().clone();
+            let mut control_inbounds = self.control_inbounds.take().unwrap();
+            let ctx = ctx.clone();
+            let inner = self.inner.clone();
+
+            let control_handle = tokio::task::Builder::new()
+                .name(&format!("{}-control", tag))
+                .spawn(async move {
+                    loop {
+                        let record = recv(&tag, &mut control_inbounds, None, ctx.clone()).await;
+                        match record {
+                            Ok(record) => {
+                                if let Err(e) = inner.handle_action_record(record) {
+                                    error!("{}: failed to handle action record: {:?}", tag, e);
+                                }
                             }
-                            self.last_handle = Some(self.transform_records(records)?);
-                        }
-                        false => {
-                            let _ = self.transform_records(records)?;
-                        }
-                    }
-                    Err(crate::utils::recv::Error::Timeout) => {}
-                    Err(e) => return Err(e.into()),
-                }
-            }
-            _ = ctx.cancelled() => return Ok(()),
-            record = recv(&tag, &mut self.control_inbounds, None, ctx.clone()) => {
-                match record {
-                    Ok(record) => {
-                        if let Err(e) = self.handle_action_record(record) {
-                            error!("{}: failed to handle action record: {:?}", self.tag, e);
+                            Err(crate::utils::recv::Error::Timeout) => {}
+                            Err(e) => {
+                                error!("{}: failed to receive control record: {:?}", tag, e);
+                            }
                         }
                     }
-                    Err(crate::utils::recv::Error::Timeout) => {}
-                    Err(e) => return Err(e.into()),
-                }
+                })?;
+
+            self.control_handle = Some(control_handle);
+        }
+
+        match recv_batch(
+            &tag,
+            &mut self.data_inbounds,
+            Some(self.interval),
+            self.buffer_size,
+            ctx.clone(),
+        )
+        .await
+        {
+            Ok(mut records) => {
+                mark_pipeline_stage(&mut records, STAGE_PIPE_RECEIVED);
+
+                self.transform_records(records)?;
             }
+            Err(crate::utils::recv::Error::Timeout) => {}
+            Err(e) => return Err(e.into()),
         }
 
         Ok(())

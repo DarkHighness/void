@@ -49,6 +49,13 @@ impl Symbol {
     {
         INTERNER.get_or_intern(s)
     }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Symbol::Interned(spur) => INTERNER.0.resolve(spur),
+            Symbol::String(s) => s.as_str(),
+        }
+    }
 }
 
 impl PartialOrd for Symbol {

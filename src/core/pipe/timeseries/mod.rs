@@ -136,17 +136,20 @@ impl InnerState {
             new_record.set(TIMESTAMP_FIELD.clone(), timestamp.clone());
 
             let value = value.cast_float()?;
-            let unit = value.ensure_float()?.unit.clone();
+            let value_guard = value.float()?;
+            let unit = value_guard.unit().cloned();
+
             new_record.set(VALUE_FIELD.clone(), value);
 
             let mut labels = labels.clone();
+            let mut labels_guard = labels.map_mut()?;
             match unit {
-                Some(unit) => labels.map_set(UNIT_FIELD.clone().into(), unit.into())?,
+                Some(unit) => labels_guard.set(UNIT_FIELD.clone().into(), unit.into()),
                 None => {}
             };
 
             for (key, value) in &self.extra_labels {
-                labels.map_set(key.into(), value.as_str().into())?;
+                labels_guard.set(key.into(), value.as_str().into());
             }
             new_record.set(LABELS_FIELD.clone(), labels);
 

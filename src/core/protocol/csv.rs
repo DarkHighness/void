@@ -217,17 +217,18 @@ mod tests {
             record
                 .get(&Symbol::new("age"))
                 .unwrap()
-                .ensure_int()
+                .int()
                 .unwrap()
-                .value,
+                .value(),
             30
         );
         assert_eq!(
             record
                 .get(&Symbol::new("active"))
                 .unwrap()
-                .ensure_bool()
-                .unwrap(),
+                .bool()
+                .unwrap()
+                .value(),
             true
         );
 
@@ -242,17 +243,18 @@ mod tests {
             record
                 .get(&Symbol::new("age"))
                 .unwrap()
-                .ensure_int()
+                .int()
                 .unwrap()
-                .value,
+                .value(),
             25
         );
         assert_eq!(
             record
                 .get(&Symbol::new("active"))
                 .unwrap()
-                .ensure_bool()
-                .unwrap(),
+                .bool()
+                .unwrap()
+                .value(),
             false
         );
 
