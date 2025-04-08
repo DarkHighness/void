@@ -2,7 +2,7 @@ use log::{error, warn};
 use tokio::{io::AsyncRead, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
-use crate::core::types::{Attribute, Record};
+use crate::core::types::Attribute;
 use crate::{
     config::ProtocolConfig,
     core::{

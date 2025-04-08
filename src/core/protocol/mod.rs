@@ -4,7 +4,6 @@ mod csv_nom;
 mod error;
 
 pub use base::ProtocolParser;
-pub use csv_nom::CSVProtocolParser;
 pub use error::{Error, Result};
 
 use crate::config::ProtocolConfig;

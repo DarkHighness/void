@@ -1,10 +1,7 @@
 use log::info;
 use petgraph::csr::DefaultIx;
 use std::hash::{Hash, Hasher};
-use std::{
-    collections::HashMap,
-    ops::{Deref, DerefMut},
-};
+use std::collections::HashMap;
 use tokio::sync::broadcast;
 
 use crate::config::global::{self};

@@ -16,7 +16,7 @@ pub mod r#type;
 
 use async_trait::async_trait;
 pub use error::{Error, Result};
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use r#type::WriteRequest;
 use tokio_util::sync::CancellationToken;
 

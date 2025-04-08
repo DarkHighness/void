@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use bytes::{Buf, BytesMut};
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_until, take_while, take_while1},
-    character::complete::{char, line_ending},
+    bytes::complete::{tag, take_while},
+    character::complete::char,
     combinator::{eof, map, opt},
-    multi::{many0, separated_list0, separated_list1},
-    sequence::{delimited, terminated, tuple},
+    multi::separated_list0,
+    sequence::{delimited, terminated},
     IResult, Parser,
 };
 use tokio::io::AsyncReadExt;
@@ -16,7 +16,7 @@ use tokio::io::AsyncReadExt;
 use crate::{
     config::protocol::csv::CSVProtocolConfig,
     core::protocol,
-    core::types::{parse_value, DataType, Record, Symbol, SymbolMap, Value},
+    core::types::{parse_value, DataType, Record, Symbol, SymbolMap},
     utils::tracing::TracingContext,
 };
 

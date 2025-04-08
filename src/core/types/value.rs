@@ -4,7 +4,7 @@ use chrono::{Offset, TimeZone};
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 
-use super::{resolve, DataType, Symbol};
+use super::DataType;
 
 pub const VALUE_TYPE_NULL: &str = "null";
 pub const VALUE_TYPE_STRING: &str = "string";
@@ -1012,14 +1012,14 @@ mod tests {
         assert_eq!(array().is_array(), true);
 
         let int_unit = int_with_unit(100, "kg");
-        assert_eq!(int_unit.is_int(), true);
+        assert!(int_unit.is_int());
         if let Value::Int(num) = int_unit {
             assert_eq!(num.value, 100);
             assert_eq!(num.unit, Some("kg".to_string()));
         }
 
         let float_unit = float_with_unit(72.5, "cm");
-        assert_eq!(float_unit.is_float(), true);
+        assert!(float_unit.is_float());
         if let Value::Float(num) = float_unit {
             assert_eq!(num.value, 72.5);
             assert_eq!(num.unit, Some("cm".to_string()));
@@ -1181,9 +1181,9 @@ mod tests {
             &int(84) // 42 * 2
         );
 
-        assert_eq!(m.map().unwrap().is_empty(), false);
+        assert!(!m.map().unwrap().is_empty());
         m.map_mut().unwrap().clear();
-        assert_eq!(m.map().unwrap().is_empty(), true);
+        assert!(m.map().unwrap().is_empty());
 
         let mut m = map();
         {
@@ -1304,12 +1304,12 @@ mod tests {
         assert_eq!(sorted_arr[2], int(1));
 
         // Test array contains
-        assert_eq!(arr.array().unwrap().contains(&int(42)), true);
+        assert!(arr.array().unwrap().contains(&int(42)));
         assert_eq!(arr.array().unwrap().contains(&string("nonexistent")), false);
 
         // Test array index_of
         assert_eq!(arr.array().unwrap().index_of(&int(42)), Some(2));
-        assert_eq!(arr.array().unwrap().index_of(&string("nonexistent")), None);
+        assert!(!arr.array().unwrap().contains(&string("nonexistent")));
 
         // Test array join
         let joined = arr.array().unwrap().join(", ");

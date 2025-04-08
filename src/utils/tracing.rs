@@ -1,10 +1,6 @@
-use std::{
-    fmt::Display,
-    sync::{atomic::AtomicUsize, Arc},
-};
+use std::{fmt::Display, sync::Arc};
 
 use dashmap::DashMap;
-use log::{debug, warn};
 
 use crate::{config::global::use_time_tracing, core::tag::TagId};
 
@@ -110,12 +106,9 @@ impl TracingContext {
             .map(|e| e.time)
             .unwrap_or(std::time::Instant::now());
 
-        for i in 0..timepoints.len() {
-            let elapsed = timepoints[i].time.duration_since(start_timestamp);
-            let key = format!(
-                "[{}] {}({})",
-                i, timepoints[i].stage, timepoints[i].direction
-            );
+        for (i, item) in timepoints.iter().enumerate() {
+            let elapsed = item.time.duration_since(start_timestamp);
+            let key = format!("[{}] {}({})", i, item.stage, item.direction);
             let range = TimeRange { key, elapsed };
 
             GLOBAL_TRACING.add_time_range(range);

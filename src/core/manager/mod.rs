@@ -16,7 +16,7 @@ use crate::{
     },
     timeit,
 };
-use log::{error, info};
+use log::info;
 
 pub use error::{Error, Result};
 pub use graph::{ChannelGraph, TaggedReceiver, TaggedSender};
