@@ -4,14 +4,12 @@ use std::sync::Arc;
 use arrow::array::{Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray};
 use arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
-use parquet::arrow::ArrowWriter;
 use parquet::basic::{ConvertedType, LogicalType, Type as ParquetType};
-use parquet::file::properties::WriterProperties;
 use parquet::schema::types::{Type, TypePtr};
 use thiserror::Error;
 
 use crate::core::types::value::Number;
-use crate::core::types::{intern, Attribute, Record, Symbol, Value};
+use crate::core::types::{intern, Attribute, Record, Value};
 use crate::utils::tracing::TracingContext;
 
 #[derive(Debug, Error)]
@@ -743,12 +741,14 @@ mod tests {
     use super::*;
     use crate::core::types::value::Number;
     use crate::core::types::{intern, Value};
-    use arrow::datatypes::{DataType, Field, Schema};
+
+    use parquet::arrow::ArrowWriter;
     use parquet::basic::{ConvertedType, LogicalType};
-    use parquet::file::reader::{FileReader, SerializedFileReader};
+    use parquet::file::properties::WriterProperties;
+
     use std::fs::File;
-    use std::io::Cursor;
-    use std::io::{Read, Write};
+
+    use std::io::Write;
     use tempfile::tempdir;
 
     fn create_test_record() -> Record {

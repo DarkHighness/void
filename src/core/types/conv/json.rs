@@ -4,8 +4,8 @@ use thiserror::Error;
 
 use crate::core::types::{
     intern, resolve,
-    value::{self, Number},
-    Record, Symbol, Value,
+    value::{Number},
+    Record, Value,
 };
 
 #[derive(Debug, Error)]
