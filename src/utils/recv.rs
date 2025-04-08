@@ -95,9 +95,9 @@ pub async fn recv_batch(
         .flatten()
         .collect::<Vec<_>>();
 
-    if records.len() >= num_records {
-        return Ok(records);
-    }
+    // if records.len() >= num_records {
+    //     return Ok(records);
+    // }
 
     loop {
         let futs = inbounds.iter_mut().map(|inbound| {

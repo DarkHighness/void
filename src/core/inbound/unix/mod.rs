@@ -30,7 +30,7 @@ pub(crate) struct UnixSocketInbound {
     listener: UnixListener,
     ctx: CancellationToken,
 
-    handles: Vec<JoinHandle<()>>,
+    connections: Vec<JoinHandle<()>>,
 
     outbound: TaggedSender,
     protocol: ProtocolConfig,
@@ -62,7 +62,7 @@ impl UnixSocketInbound {
             path,
             listener: socket,
             ctx: CancellationToken::new(),
-            handles: Vec::new(),
+            connections: Vec::new(),
             outbound,
             protocol: protocol_cfg,
         };
@@ -113,7 +113,7 @@ impl Actor for UnixSocketInbound {
                     self.outbound.clone(),
                     self.ctx.clone(),
                 )?;
-                self.handles.push(handle);
+                self.connections.push(handle);
                 info!("inbound \"{}\" spawn a new connection \"{:?}\" ", self.tag, addr);
             }
         }

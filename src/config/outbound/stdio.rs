@@ -34,7 +34,11 @@ impl Verify for StdioOutboundConfig {
     }
 }
 
-impl StdioOutboundConfig {}
+impl StdioOutboundConfig {
+    pub fn channel_scale_factor(&self) -> usize {
+        8
+    }
+}
 
 fn default_stdio_tag() -> OutboundTagId {
     OutboundTagId::new("stdio")

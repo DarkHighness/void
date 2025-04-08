@@ -13,6 +13,8 @@ pub enum Error {
     Timeout,
     #[error(transparent)]
     Recv(#[from] crate::utils::recv::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

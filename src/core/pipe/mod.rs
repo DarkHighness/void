@@ -18,7 +18,7 @@ pub fn try_create_from(cfg: PipeConfig, channels: &mut ChannelGraph) -> Result<B
         PipeConfig::Timeseries(cfg) => {
             Box::new(timeseries::TimeseriesPipe::try_create_from(cfg, channels)?)
         }
-        PipeConfig::TimeseriesAction(cfg) => Box::new(
+        PipeConfig::TimeseriesAnnotate(cfg) => Box::new(
             timeseries::TimeseriesAnnotatePipe::try_create_from(cfg, channels)?,
         ),
     };

@@ -138,7 +138,7 @@ impl WriteRequest {
         auth: &AuthConfig,
         endpoint: &str,
         useragent: &str,
-    ) -> Result<reqwest::Request, super::Error> {
+    ) -> Result<reqwest::RequestBuilder, super::Error> {
         let url = format!("{}/api/v1/write", endpoint);
         let builder = client
             .post(&url)
@@ -155,7 +155,7 @@ impl WriteRequest {
             AuthConfig::Bearer { token } => builder.bearer_auth(token),
         };
 
-        let request = builder.body(self.encode_compressed()?).build()?;
+        let request = builder.body(self.encode_compressed()?);
 
         Ok(request)
     }

@@ -121,15 +121,10 @@ impl Manager {
             handles.push(handle);
         }
 
+        crate::utils::spawn_tracing_task();
+
         // Wait for all handles to finish
-        futures::future::try_join_all(handles)
-            .await?
-            .iter()
-            .for_each(|result| {
-                if let Err(err) = result {
-                    error!("Error in actor: {:?}", err);
-                }
-            });
+        futures::future::try_join_all(handles).await?;
 
         Ok(())
     }

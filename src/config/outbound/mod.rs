@@ -35,6 +35,13 @@ impl OutboundConfig {
             OutboundConfig::Prometheus(cfg) => cfg.disabled,
         }
     }
+
+    pub fn channel_scale_factor(&self) -> usize {
+        match self {
+            OutboundConfig::Stdio(cfg) => cfg.channel_scale_factor(),
+            OutboundConfig::Prometheus(cfg) => cfg.channel_scale_factor(),
+        }
+    }
 }
 
 impl Verify for OutboundConfig {

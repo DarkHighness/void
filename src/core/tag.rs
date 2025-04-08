@@ -3,12 +3,13 @@ use std::{fmt::Display, ops::Deref};
 
 use std::collections::HashSet;
 
-use super::types::{resolve, Symbol, Value};
+use super::types::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TagId {
+    // These two pointers are static, so we can implement Copy trait for them.
     scope: &'static str,
-    name: Symbol,
+    name: &'static str,
 }
 
 pub trait HasTag {
@@ -48,9 +49,12 @@ macro_rules! impl_serde_for_scoped_tag_id {
     ($tag_id:ty, $scope:ident) => {
         impl $tag_id {
             pub fn new(name: &str) -> Self {
+                let name = name.to_string();
+                let name = name.leak();
+
                 Self(TagId {
                     scope: $scope,
-                    name: name.into(),
+                    name,
                 })
             }
         }
@@ -61,9 +65,10 @@ macro_rules! impl_serde_for_scoped_tag_id {
                 D: serde::Deserializer<'de>,
             {
                 let name = String::deserialize(deserializer)?;
+                let name = name.leak();
                 Ok(Self(TagId {
                     scope: $scope,
-                    name: name.into(),
+                    name,
                 }))
             }
         }
@@ -73,8 +78,8 @@ macro_rules! impl_serde_for_scoped_tag_id {
             where
                 S: serde::Serializer,
             {
-                let name = resolve(&self.0.name);
-                serializer.serialize_str(&name)
+                let str = format!("{}:{}", self.0.scope, self.0.name);
+                serializer.serialize_str(&str)
             }
         }
 
@@ -133,6 +138,7 @@ impl<'de> Deserialize<'de> for TagId {
         D: serde::Deserializer<'de>,
     {
         let str = String::deserialize(deserializer)?;
+        let str = str.leak();
         let parts: Vec<&str> = str.split(':').collect();
         if parts.len() != 2 {
             return Err(serde::de::Error::custom("Invalid ScopedTagId format"));
@@ -161,11 +167,8 @@ impl<'de> Deserialize<'de> for TagId {
 }
 
 impl TagId {
-    pub fn new(scope: &'static str, name: &str) -> Self {
-        Self {
-            scope,
-            name: name.into(),
-        }
+    pub fn new(scope: &'static str, name: &'static str) -> Self {
+        Self { scope, name }
     }
 
     pub fn scope(&self) -> &'static str {

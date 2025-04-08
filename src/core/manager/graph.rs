@@ -8,6 +8,7 @@ use std::{
 use tokio::sync::broadcast;
 
 use crate::config::global::{self};
+use crate::utils::tracing::Direction;
 use crate::{
     config::{inbound::InboundConfig, pipe::PipeConfig, OutboundConfig},
     core::{
@@ -31,66 +32,64 @@ pub struct TaggedSender {
 }
 
 impl TaggedSender {
-    pub fn new(tag: TagId, sender: broadcast::Sender<Record>) -> Self {
-        TaggedSender { tag, sender }
-    }
-
-    pub fn tag(&self) -> &TagId {
-        &self.tag
-    }
-
-    pub fn sender(&self) -> &broadcast::Sender<Record> {
-        &self.sender
+    pub fn send(&mut self, record: Record) -> Result<usize, broadcast::error::SendError<Record>> {
+        record.mark_timestamp(&self.tag, Direction::Outgoing);
+        self.sender.send(record)
     }
 }
 
 #[derive(Debug)]
 pub struct TaggedReceiver {
     tag: TagId,
+    who: TagId,
     receiver: broadcast::Receiver<Record>,
 }
 
 impl TaggedReceiver {
-    pub fn new(tag: TagId, receiver: broadcast::Receiver<Record>) -> Self {
-        TaggedReceiver { tag, receiver }
-    }
-
     pub fn tag(&self) -> &TagId {
         &self.tag
     }
 
-    pub fn receiver(&self) -> &broadcast::Receiver<Record> {
-        &self.receiver
+    pub async fn recv(&mut self) -> Result<Record, broadcast::error::RecvError> {
+        let record = self.receiver.recv().await?;
+        record.mark_timestamp(&self.who, Direction::Incoming);
+        Ok(record)
+    }
+
+    pub fn try_recv(&mut self) -> Result<Record, broadcast::error::TryRecvError> {
+        let record = self.receiver.try_recv()?;
+        record.mark_timestamp(&self.who, Direction::Incoming);
+        Ok(record)
     }
 }
 
-impl Deref for TaggedSender {
-    type Target = broadcast::Sender<Record>;
+// impl Deref for TaggedSender {
+//     type Target = broadcast::Sender<Record>;
 
-    fn deref(&self) -> &Self::Target {
-        &self.sender
-    }
-}
+//     fn deref(&self) -> &Self::Target {
+//         &self.sender
+//     }
+// }
 
-impl Deref for TaggedReceiver {
-    type Target = broadcast::Receiver<Record>;
+// impl Deref for TaggedReceiver {
+//     type Target = broadcast::Receiver<Record>;
 
-    fn deref(&self) -> &Self::Target {
-        &self.receiver
-    }
-}
+//     fn deref(&self) -> &Self::Target {
+//         &self.receiver
+//     }
+// }
 
-impl DerefMut for TaggedReceiver {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.receiver
-    }
-}
+// impl DerefMut for TaggedReceiver {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.receiver
+//     }
+// }
 
-impl DerefMut for TaggedSender {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.sender
-    }
-}
+// impl DerefMut for TaggedSender {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.sender
+//     }
+// }
 
 impl PartialEq for TaggedSender {
     fn eq(&self, other: &Self) -> bool {
@@ -120,9 +119,11 @@ impl Hash for TaggedReceiver {
 }
 
 impl ActorChannel {
-    pub fn new(tag: TagId) -> Self {
-        let cap = global::channel_buffer_size();
+    pub fn new(tag: TagId, factor: usize) -> Self {
+        let cap = global::channel_buffer_size() * factor;
         let (sender, receiver) = broadcast::channel(cap);
+        info!("Created channel {} with buffer size {}", tag, cap);
+
         ActorChannel {
             tag,
             sender: Some(sender),
@@ -142,10 +143,11 @@ impl ActorChannel {
         }
     }
 
-    pub fn receiver(&self) -> TaggedReceiver {
+    pub fn receiver(&self, who: &TagId) -> TaggedReceiver {
         let receiver = self.receiver.resubscribe();
         TaggedReceiver {
             tag: self.tag.clone(),
+            who: who.clone(),
             receiver,
         }
     }
@@ -167,17 +169,24 @@ impl ChannelGraph {
     ) -> super::Result<Self> {
         let tags = inbounds
             .iter()
-            .map(HasTag::tag)
-            .chain(pipes.iter().map(HasTag::tag))
-            .chain(outbounds.iter().map(HasTag::tag))
-            .cloned()
+            .map(|e| (e.tag().clone(), 1))
+            .chain(
+                pipes
+                    .iter()
+                    .map(|e| (e.tag().clone(), e.channel_scale_factor())),
+            )
+            .chain(
+                outbounds
+                    .iter()
+                    .map(|e| (e.tag().clone(), e.channel_scale_factor())),
+            )
             .collect::<Vec<_>>();
 
         let mut graph = petgraph::Graph::<TagId, (), petgraph::Directed, DefaultIx>::new();
         let mut tag_to_idx = HashMap::new();
 
         let mut channels = HashMap::new();
-        for tag in tags {
+        for (tag, factor) in tags {
             if channels.contains_key(&tag) {
                 return Err(super::Error::DuplicateTag(tag));
             }
@@ -185,7 +194,7 @@ impl ChannelGraph {
             let node = graph.add_node(tag.clone());
             tag_to_idx.insert(tag.clone(), node);
 
-            let channel = ActorChannel::new(tag.clone());
+            let channel = ActorChannel::new(tag.clone(), factor);
             channels.insert(tag, channel);
         }
 
@@ -212,7 +221,7 @@ impl ChannelGraph {
             "Channel not found in DAG, {} wants to receive from {}",
             who, tag,
         ));
-        let receiver = channel.receiver();
+        let receiver = channel.receiver(who);
 
         let src = self.tag_2_idx.get(tag).expect("Tag not found in DAG");
         let dst = self.tag_2_idx.get(who).expect("Tag not found in DAG");

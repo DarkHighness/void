@@ -1,10 +1,10 @@
-use std::{
-    collections::HashMap,
-    fmt::Display,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
-use crate::core::types::resolve;
+use crate::{
+    config::global::use_time_tracing,
+    core::{tag::TagId, types::resolve},
+    utils::tracing::{Direction, TracingContext},
+};
 
 use super::{Symbol, Value};
 
@@ -23,94 +23,51 @@ impl Display for Attribute {
     }
 }
 
-pub const STAGE_INBOUND_RECEIVED: &str = "inbound_received";
-pub const STAGE_PIPE_RECEIVED: &str = "pipe_received";
-pub const STAGE_PIPE_PROCESSED: &str = "pipe_processed";
-pub const STAGE_OUTBOUND_RECEIVED: &str = "outbound_received";
-pub const STAGE_OUTBOUND_PROCESSED: &str = "outbound_processed";
+pub type AttributeMap = HashMap<Attribute, Value>;
+pub type SymbolMap = HashMap<Symbol, Value>;
 
 #[derive(Debug, Clone)]
 pub struct Record {
-    values: HashMap<Symbol, Value>,
-    attributes: HashMap<Attribute, Value>,
-    creation_time: Instant,
-    stage_duration: HashMap<String, Duration>,
+    values: SymbolMap,
+    attributes: AttributeMap,
+
+    tracing_ctx: Arc<TracingContext>,
 }
 
 impl Record {
     pub fn empty() -> Self {
         Self {
-            values: HashMap::new(),
-            attributes: HashMap::new(),
-            creation_time: Instant::now(),
-            stage_duration: HashMap::new(),
+            values: SymbolMap::new(),
+            attributes: AttributeMap::new(),
+            tracing_ctx: TracingContext::new_root(),
         }
     }
 
-    pub fn new(values: HashMap<Symbol, Value>) -> Self {
+    pub fn new(ctx: Arc<TracingContext>) -> Self {
+        let ctx = TracingContext::inherit(ctx);
+        Self {
+            values: SymbolMap::new(),
+            attributes: AttributeMap::new(),
+            tracing_ctx: ctx,
+        }
+    }
+
+    pub fn new_with_attrs(attrs: AttributeMap, ctx: Arc<TracingContext>) -> Self {
+        let ctx = TracingContext::inherit(ctx);
+        Self {
+            values: SymbolMap::new(),
+            attributes: attrs,
+            tracing_ctx: ctx,
+        }
+    }
+
+    pub fn new_with_values(values: SymbolMap, ctx: Arc<TracingContext>) -> Self {
+        let ctx = TracingContext::inherit(ctx);
         Self {
             values,
-            attributes: HashMap::new(),
-            creation_time: Instant::now(),
-            stage_duration: HashMap::new(),
+            attributes: AttributeMap::new(),
+            tracing_ctx: ctx,
         }
-    }
-
-    pub fn new_with_attributes(
-        values: HashMap<Symbol, Value>,
-        attributes: HashMap<Attribute, Value>,
-    ) -> Self {
-        Self {
-            values,
-            attributes,
-            creation_time: Instant::now(),
-            stage_duration: HashMap::new(),
-        }
-    }
-
-    pub fn mark_timestamp(&mut self, stage_name: &str) {
-        let elapsed = self.creation_time.elapsed();
-        self.stage_duration.insert(stage_name.to_string(), elapsed);
-    }
-
-    pub fn get_timestamp(&self, stage_name: &str) -> Option<&Duration> {
-        self.stage_duration.get(stage_name)
-    }
-
-    pub fn get_duration_between(&self, start_stage: &str, end_stage: &str) -> Option<Duration> {
-        let start = self.stage_duration.get(start_stage)?;
-        let end = self.stage_duration.get(end_stage)?;
-
-        if end > start {
-            Some(*end - *start)
-        } else {
-            None
-        }
-    }
-
-    pub fn inherit_timestamps(&mut self, other: &Self) {
-        self.creation_time = other.creation_time;
-        self.stage_duration = other.stage_duration.clone();
-    }
-
-    pub fn set_stage_duration_map(&mut self, stage_duration: HashMap<String, Duration>) {
-        self.stage_duration = stage_duration;
-    }
-
-    pub fn set_creation_time(&mut self, creation_time: Instant) {
-        self.creation_time = creation_time;
-    }
-
-    pub fn get_stage_duration(&self) -> &HashMap<String, Duration> {
-        &self.stage_duration
-    }
-
-    pub fn total_elapsed(&self) -> Duration {
-        self.creation_time.elapsed()
-    }
-
-    pub fn creation_time(&self) -> &Instant {
-        &self.creation_time
     }
 
     pub fn set(&mut self, key: Symbol, value: Value) {
@@ -149,26 +106,46 @@ impl Record {
         self.get_attribute(&Attribute::Type)
     }
 
-    pub fn take(self) -> HashMap<Symbol, Value> {
+    pub fn take(self) -> SymbolMap {
         self.values
     }
-}
 
-impl From<HashMap<Symbol, Value>> for Record {
-    fn from(values: HashMap<Symbol, Value>) -> Self {
-        Self::new(values)
+    pub fn attributes(&self) -> &AttributeMap {
+        &self.attributes
     }
-}
 
-impl FromIterator<(Symbol, Value)> for Record {
-    fn from_iter<T: IntoIterator<Item = (Symbol, Value)>>(iter: T) -> Self {
-        let mut values = HashMap::new();
-        for (key, value) in iter {
-            values.insert(key, value);
+    pub fn tracing_context(&self) -> &Arc<TracingContext> {
+        &self.tracing_ctx
+    }
+
+    pub fn mark_timestamp(&self, tag: &TagId, direction: Direction) {
+        if use_time_tracing() {
+            self.tracing_ctx.add_timepoint(tag, direction);
         }
-        Self::new(values)
+    }
+
+    pub fn mark_record_release(&self) {
+        if use_time_tracing() {
+            self.tracing_ctx.record();
+        }
     }
 }
+
+// impl From<HashMap<Symbol, Value>> for Record {
+//     fn from(values: HashMap<Symbol, Value>) -> Self {
+//         Self::new_with_values(values)
+//     }
+// }
+
+// impl FromIterator<(Symbol, Value)> for Record {
+//     fn from_iter<T: IntoIterator<Item = (Symbol, Value)>>(iter: T) -> Self {
+//         let mut values = HashMap::new();
+//         for (key, value) in iter {
+//             values.insert(key, value);
+//         }
+//         Self::new_with_values(values)
+//     }
+// }
 
 impl std::ops::Index<&Symbol> for Record {
     type Output = Value;
@@ -202,12 +179,6 @@ impl Display for Record {
             format!("\"{}\": {}", key, value)
         });
 
-        // 添加时间戳信息
-        let timestamps = self
-            .stage_duration
-            .iter()
-            .map(|(stage, duration)| format!("{} time: {}s", stage, duration.as_secs_f64()));
-
         let r#type = self
             .get_type()
             .map(|t| t.to_string())
@@ -215,7 +186,6 @@ impl Display for Record {
 
         let s = fields
             .chain(attrs)
-            .chain(timestamps)
             .fold(format!("{} {{", r#type), |acc, field| {
                 format!("{}\n  {},", acc, field)
             });
@@ -280,18 +250,7 @@ mod tests {
         let value = Value::String(Symbol::from("test_value"));
         values.insert(key.clone(), value.clone());
 
-        let record = Record::from(values);
-
-        assert_eq!(record.get(&key), Some(&value));
-    }
-
-    #[test]
-    fn test_from_iterator() {
-        let key = Symbol::from("test_key");
-        let value = Value::String(Symbol::from("test_value"));
-        let pairs = vec![(key.clone(), value.clone())];
-
-        let record = Record::from_iter(pairs);
+        let record = Record::new_with_values(values, TracingContext::new_root());
 
         assert_eq!(record.get(&key), Some(&value));
     }

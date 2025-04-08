@@ -1,5 +1,5 @@
 [global]
-time_tracing="time.txt"
+time_tracing=true
 
 [[inbounds]]
 tag = "data"
@@ -13,14 +13,14 @@ type = "unix_socket"
 path = "/tmp/control.sock"
 protocol = "control_csv"
 
-[[outbounds]]
-type = "stdio"
-inbounds = ["pipe:timeseries_annotate"]
-disabled = true
+# [[outbounds]]
+# type = "stdio"
+# inbounds = ["pipe:timeseries_annotate"]
+# disabled = true
 
 [[outbounds]]
 type = "prometheus"
-inbounds = ["pipe:timeseries_annotate"]
+inbounds = ["pipe:timeseries"]
 address = "env:PROMETHEUS_ADDRESS"
 interval = "100ms"
 auth = { type = "basic", username = "admin", password = "env:PASSWORD" }
@@ -37,10 +37,10 @@ labels = ["index"]
 timestamp = "timestamp"
 extra_labels = { job = "void" }
 
-[[pipes]]
-type = "timeseries_annotate"
-data_inbounds = ["pipe:timeseries"]
-control_inbounds = ["inbound:control"]
+# [[pipes]]
+# type = "timeseries_annotate"
+# data_inbounds = ["pipe:timeseries"]
+# control_inbounds = ["inbound:control"]
 
 [[protocols]]
 tag = "data_csv"

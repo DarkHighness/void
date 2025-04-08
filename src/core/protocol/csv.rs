@@ -7,7 +7,8 @@ use tokio::io::AsyncReadExt;
 
 use crate::{
     config::protocol::csv::CSVProtocolConfig,
-    core::types::{parse_value, DataType, Record, Symbol},
+    core::types::{parse_value, DataType, Record, Symbol, SymbolMap},
+    utils::tracing::TracingContext,
 };
 
 const BUFFER_SIZE: usize = 8192;
@@ -83,7 +84,7 @@ where
     }
 
     fn parse_record(&self, ends: &[usize], end_pos: usize) -> super::Result<Record> {
-        ends[0..end_pos + 1]
+        let map = ends[0..end_pos + 1]
             .windows(2)
             .enumerate()
             .filter_map(|(i, range)| {
@@ -104,7 +105,10 @@ where
                         .map(|v| (name.clone(), v))
                 })
             })
-            .collect::<Result<Record, super::Error>>()
+            .collect::<Result<SymbolMap, super::Error>>()?;
+
+        let record = Record::new_with_values(map, TracingContext::new_root());
+        Ok(record)
     }
 }
 

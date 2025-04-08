@@ -1,7 +1,6 @@
 pub mod annotate;
 
 pub use annotate::TimeseriesAnnotatePipe;
-use tokio::task::JoinHandle;
 
 pub use super::{Error, Result};
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -12,18 +11,14 @@ use once_cell::sync::Lazy;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::{
-        global::use_serial_mode,
-        outbound,
-        pipe::timeseries::{MetricType, TimeseriesPipeConfig},
-    },
+    config::pipe::timeseries::{MetricType, TimeseriesPipeConfig},
     core::{
         actor::Actor,
         manager::{ChannelGraph, TaggedReceiver, TaggedSender},
         tag::{HasTag, TagId},
-        types::{Attribute, Record, Symbol, Value, STAGE_PIPE_PROCESSED, STAGE_PIPE_RECEIVED},
+        types::{Attribute, Record, Symbol, Value},
     },
-    utils::{record_timing::mark_pipeline_stage, recv::recv_batch},
+    utils::recv::recv_batch,
 };
 
 use super::Pipe;
@@ -58,11 +53,6 @@ impl InnerState {
     }
 
     fn transform(&self, record: Record) -> super::Result<Vec<Record>> {
-        let (creation_time, stage_duration) = (
-            record.creation_time().clone(),
-            record.get_stage_duration().clone(),
-        );
-
         let inbound = record
             .get_attribute(&Attribute::Inbound)
             .cloned()
@@ -82,6 +72,9 @@ impl InnerState {
                 return Err(super::Error::FieldNotFound(TIMESTAMP_FIELD_STR));
             }
         };
+
+        let attrs = record.attributes().clone();
+        let tracing_ctx = record.tracing_context().clone();
 
         let (labels, values) = record
             .take()
@@ -114,7 +107,7 @@ impl InnerState {
 
         let mut new_records = Vec::new();
         for (name, value) in values {
-            let mut new_record = Record::empty();
+            let mut new_record = Record::new_with_attrs(attrs.clone(), tracing_ctx.clone());
 
             let metric_type = match self.value_syms {
                 Some(ref syms) => {
@@ -156,9 +149,6 @@ impl InnerState {
             new_record.set_attribute(Attribute::Type, RECORD_TYPE_TIMESERIES_VALUE.clone());
             new_record.set_attribute(Attribute::Inbound, inbound.clone());
 
-            new_record.set_creation_time(creation_time.clone());
-            new_record.set_stage_duration_map(stage_duration.clone());
-
             new_records.push(new_record);
         }
 
@@ -178,7 +168,6 @@ pub struct TimeseriesPipe {
 
     inbounds: Vec<TaggedReceiver>,
     outbound: TaggedSender,
-    last_handle: Option<JoinHandle<()>>,
 
     interval: Duration,
     buffer_size: usize,
@@ -249,48 +238,35 @@ impl TimeseriesPipe {
             inner,
             inbounds,
             outbound,
-            last_handle: None,
-            interval: cfg.interval,
-            buffer_size: cfg.buffer_size,
+            interval: cfg.recv_timeout,
+            buffer_size: cfg.recv_buffer_size,
         })
     }
 
-    fn transform_records(&self, mut records: Vec<Record>) -> super::Result<JoinHandle<()>> {
-        for record in &mut records {
-            record.mark_timestamp(&format!("{}:{}", STAGE_PIPE_RECEIVED, self.tag));
-        }
+    fn transform_records(&mut self, records: Vec<Record>) -> super::Result<()> {
+        let inner = &self.inner;
 
-        let inner = self.inner.clone();
-
-        let handle = tokio::task::Builder::new()
-            .name(&format!("{}-transform", self.tag))
-            .spawn(async move {
-                let mut transformed_records: Vec<_> = records
-                    .into_iter()
-                    .map(|r| inner.transform(r))
-                    .filter_map(|r| match r {
-                        Ok(records) => Some(records),
-                        Err(e) => {
-                            warn!("{}: error transforming record: {}", inner.tag, e);
-                            None
-                        }
-                    })
-                    .flatten()
-                    .collect();
-
-                for record in &mut transformed_records {
-                    record.mark_timestamp(&format!("{}:{}", STAGE_PIPE_PROCESSED, inner.tag));
+        let transformed_records: Vec<_> = records
+            .into_iter()
+            .map(|r| inner.transform(r))
+            .filter_map(|r| match r {
+                Ok(records) => Some(records),
+                Err(e) => {
+                    warn!("{}: error transforming record: {}", inner.tag, e);
+                    None
                 }
+            })
+            .flatten()
+            .collect();
 
-                // mark pipeline sending time
-                transformed_records.into_iter().for_each(|record| {
-                    if let Err(e) = inner.outbound.send(record) {
-                        warn!("{}: error sending record: {}", inner.tag, e);
-                    }
-                });
-            })?;
+        // mark pipeline sending time
+        transformed_records.into_iter().for_each(|record| {
+            if let Err(e) = self.outbound.send(record) {
+                warn!("{}: error sending record: {}", inner.tag, e);
+            }
+        });
 
-        Ok(handle)
+        Ok(())
     }
 }
 
@@ -324,22 +300,7 @@ impl Actor for TimeseriesPipe {
 
         debug!("{}: received {} records", self.tag, records.len());
 
-        match use_serial_mode() {
-            true => {
-                let handle = self.last_handle.take();
-                if let Some(handle) = handle {
-                    if let Err(e) = handle.await {
-                        warn!("{}: error waiting for handle: {}", self.tag, e);
-                    }
-                }
-
-                let this_handle = self.transform_records(records)?;
-                self.last_handle = Some(this_handle);
-            }
-            false => {
-                let _ = self.transform_records(records);
-            }
-        }
+        self.transform_records(records)?;
 
         Ok(())
     }

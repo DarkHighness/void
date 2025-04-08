@@ -2,8 +2,7 @@ use log::{error, warn};
 use tokio::{io::AsyncRead, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
-use crate::core::types::{Attribute, Record, STAGE_INBOUND_RECEIVED};
-use crate::utils::record_timing::mark_pipeline_stage;
+use crate::core::types::{Attribute, Record};
 use crate::{
     config::ProtocolConfig,
     core::{
@@ -53,6 +52,7 @@ impl ReaderBasedInstance {
         tokio::task::Builder::new()
             .name(&name.clone())
             .spawn(async move {
+                let mut sender = self.sender;
                 let mut parser = self.parser;
 
                 loop {
@@ -76,10 +76,9 @@ impl ReaderBasedInstance {
                         }
                     };
 
-                    record.mark_timestamp(STAGE_INBOUND_RECEIVED);
                     record.set_attribute(Attribute::Inbound, (&self.tag).into());
 
-                    if let Err(err) = self.sender.send(record) {
+                    if let Err(err) = sender.send(record) {
                         error!("{} failed to send, err: {}", &name, err);
                         break;
                     }

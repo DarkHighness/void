@@ -111,11 +111,11 @@ pub struct TimeseriesPipeConfig {
     #[serde(default)]
     pub disabled: bool,
 
-    #[serde(default = "default_timeseries_pipe_interval")]
-    pub interval: Duration,
+    #[serde(default = "default_timeseries_pipe_recv_timeout")]
+    pub recv_timeout: Duration,
 
-    #[serde(default = "default_timeseries_pipe_buffer_size")]
-    pub buffer_size: usize,
+    #[serde(default = "default_timeseries_pipe_recv_buffer_size")]
+    pub recv_buffer_size: usize,
 }
 
 impl Verify for TimeseriesPipeConfig {
@@ -143,16 +143,20 @@ impl Verify for TimeseriesPipeConfig {
     }
 }
 
-impl TimeseriesPipeConfig {}
+impl TimeseriesPipeConfig {
+    pub fn channel_scale_factor(&self) -> usize {
+        32
+    }
+}
 
 fn default_timeseries_tag() -> PipeTagId {
     PipeTagId::new("timeseries")
 }
 
-fn default_timeseries_pipe_interval() -> Duration {
+fn default_timeseries_pipe_recv_timeout() -> Duration {
     Duration::from_millis(5)
 }
 
-fn default_timeseries_pipe_buffer_size() -> usize {
-    32
+fn default_timeseries_pipe_recv_buffer_size() -> usize {
+    64 * 8192
 }

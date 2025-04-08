@@ -1,24 +1,20 @@
-use std::{collections::HashMap, ops::Deref, sync::Arc, time::Duration};
+use std::{ops::Deref, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use dashmap::{DashMap, DashSet};
 use log::{error, info};
 use once_cell::sync::Lazy;
-use tokio::task::JoinHandle;
 
 use crate::{
-    config::{global::use_serial_mode, pipe::timeseries::TimeseriesAnnotatePipeConfig},
+    config::pipe::timeseries::TimeseriesAnnotatePipeConfig,
     core::{
         actor::Actor,
         manager::{ChannelGraph, TaggedReceiver, TaggedSender},
         pipe::Pipe,
         tag::{HasTag, TagId},
-        types::{Record, Symbol, Value, STAGE_PIPE_PROCESSED, STAGE_PIPE_RECEIVED},
+        types::{Record, Symbol, Value},
     },
-    utils::{
-        record_timing::mark_pipeline_stage,
-        recv::{recv, recv_batch},
-    },
+    utils::recv::{recv, recv_batch},
 };
 
 use super::{LABELS_FIELD, LABELS_FIELD_STR};
@@ -60,7 +56,7 @@ impl InnerState {
         Ok(record)
     }
 
-    fn handle_action_record(&self, record: Record) -> super::Result<()> {
+    fn handle_action(&self, record: Record) -> super::Result<()> {
         let action = record
             .get(ACTION_FIELD.deref())
             .ok_or_else(|| super::Error::FieldNotFound(ACTION_FIELD_STR))?;
@@ -142,12 +138,11 @@ pub struct TimeseriesAnnotatePipe {
     tag: TagId,
 
     data_inbounds: Vec<TaggedReceiver>,
-    control_inbounds: Option<Vec<TaggedReceiver>>,
+    control_inbounds: Vec<TaggedReceiver>,
 
     inner: Arc<InnerState>,
 
     outbound: TaggedSender,
-    control_handle: Option<JoinHandle<()>>,
 
     interval: Duration,
     buffer_size: usize,
@@ -188,27 +183,22 @@ impl TimeseriesAnnotatePipe {
         let pipe = TimeseriesAnnotatePipe {
             tag: cfg.tag.into(),
             data_inbounds,
-            control_inbounds: Some(control_inbounds),
+            control_inbounds,
             inner,
             outbound,
-            control_handle: None,
-            interval: cfg.interval,
-            buffer_size: cfg.buffer_size,
+            interval: cfg.recv_timeout,
+            buffer_size: cfg.recv_buffer_size,
         };
 
         Ok(pipe)
     }
 
-    fn transform_records(&self, mut records: Vec<Record>) -> super::Result<()> {
-        for record in records.iter_mut() {
-            record.mark_timestamp(&format!("{}-{}", STAGE_PIPE_RECEIVED, self.tag));
-        }
-
+    fn transform_records(&mut self, records: Vec<Record>) -> super::Result<()> {
         let inner = self.inner.clone();
-        let outbound = self.outbound.clone();
+        let outbound = &mut self.outbound;
 
         // transform records
-        let mut transformed_records: Vec<_> = records
+        let transformed_records: Vec<_> = records
             .into_iter()
             .filter_map(|record| match inner.transform(record) {
                 Ok(record) => Some(record),
@@ -218,10 +208,6 @@ impl TimeseriesAnnotatePipe {
                 }
             })
             .collect();
-
-        for record in transformed_records.iter_mut() {
-            record.mark_timestamp(&format!("{}-{}", STAGE_PIPE_PROCESSED, inner.tag));
-        }
 
         transformed_records.into_iter().for_each(|r| {
             if let Err(e) = outbound.send(r) {
@@ -248,51 +234,42 @@ impl Actor for TimeseriesAnnotatePipe {
         ctx: tokio_util::sync::CancellationToken,
     ) -> std::result::Result<(), super::Error> {
         let tag = self.tag().clone();
+        let control_inbounds = &mut self.control_inbounds;
+        let data_inbounds = &mut self.data_inbounds;
 
-        if self.control_handle.is_none() {
-            let tag = self.tag().clone();
-            let mut control_inbounds = self.control_inbounds.take().unwrap();
-            let ctx = ctx.clone();
-            let inner = self.inner.clone();
+        tokio::select! {
+            biased;
 
-            let control_handle = tokio::task::Builder::new()
-                .name(&format!("{}-control", tag))
-                .spawn(async move {
-                    loop {
-                        let record = recv(&tag, &mut control_inbounds, None, ctx.clone()).await;
-                        match record {
-                            Ok(record) => {
-                                if let Err(e) = inner.handle_action_record(record) {
-                                    error!("{}: failed to handle action record: {:?}", tag, e);
-                                }
-                            }
-                            Err(crate::utils::recv::Error::Timeout) => {}
-                            Err(e) => {
-                                error!("{}: failed to receive control record: {:?}", tag, e);
-                            }
-                        }
+            records = recv_batch(
+                &tag,
+                data_inbounds,
+                Some(self.interval),
+                self.buffer_size,
+                ctx.clone(),
+            ) => {
+                match records {
+                    Ok(records) => {
+                        self.transform_records(records)?;
                     }
-                })?;
-
-            self.control_handle = Some(control_handle);
-        }
-
-        match recv_batch(
-            &tag,
-            &mut self.data_inbounds,
-            Some(self.interval),
-            self.buffer_size,
-            ctx.clone(),
-        )
-        .await
-        {
-            Ok(mut records) => {
-                mark_pipeline_stage(&mut records, STAGE_PIPE_RECEIVED);
-
-                self.transform_records(records)?;
+                    Err(crate::utils::recv::Error::Timeout) => {}
+                    Err(e) => return Err(e.into()),
+                }
+            },
+            control_record = recv(&tag, control_inbounds, None, ctx.clone()) => match control_record {
+                Ok(record) => {
+                    if let Err(e) = self.inner.handle_action(record) {
+                        error!("{}: failed to handle action record: {:?}", tag, e);
+                    }
+                }
+                Err(crate::utils::recv::Error::Timeout) => {}
+                Err(e) => {
+                    error!("{}: failed to receive control record: {:?}", tag, e);
+                }
+            },
+            _ = ctx.cancelled() => {
+                info!("{}: cancelled", tag);
+                return Ok(());
             }
-            Err(crate::utils::recv::Error::Timeout) => {}
-            Err(e) => return Err(e.into()),
         }
 
         Ok(())

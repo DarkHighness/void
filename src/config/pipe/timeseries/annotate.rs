@@ -17,11 +17,12 @@ pub struct TimeseriesAnnotatePipeConfig {
     #[serde(default)]
     pub disabled: bool,
 
-    #[serde(default = "default_timeseries_annotate_pipe_interval")]
-    pub interval: Duration,
+    #[serde(default = "default_timeseries_annotate_pipe_recv_timeout")]
+    #[serde(deserialize_with = "crate::utils::parse_duration")]
+    pub recv_timeout: Duration,
 
-    #[serde(default = "default_timeseries_annotate_pipe_buffer_size")]
-    pub buffer_size: usize,
+    #[serde(default = "default_timeseries_annotate_pipe_recv_size")]
+    pub recv_buffer_size: usize,
 }
 
 impl Verify for TimeseriesAnnotatePipeConfig {
@@ -44,10 +45,16 @@ fn default_timeseries_annotate_tag() -> PipeTagId {
     PipeTagId::new("timeseries_annotate")
 }
 
-fn default_timeseries_annotate_pipe_interval() -> Duration {
+fn default_timeseries_annotate_pipe_recv_timeout() -> Duration {
     Duration::from_millis(5)
 }
 
-fn default_timeseries_annotate_pipe_buffer_size() -> usize {
-    32
+fn default_timeseries_annotate_pipe_recv_size() -> usize {
+    64 * 8192
+}
+
+impl TimeseriesAnnotatePipeConfig {
+    pub fn channel_scale_factor(&self) -> usize {
+        32
+    }
 }
