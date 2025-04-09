@@ -19,7 +19,7 @@ pub mod error;
 
 use async_trait::async_trait;
 pub use error::{Error, Result};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use tokio_util::sync::CancellationToken;
 
 use super::Outbound;
@@ -177,17 +177,13 @@ impl Actor for PrometheusOutbound {
 
             if use_time_tracing() {
                 let elapsed = transform_start_timestamp.elapsed();
-                info!("{}: prometheus request took {:?}", tag, elapsed);
+                debug!("{}: prometheus request took {:?}", tag, elapsed);
             }
 
             Ok::<(), super::Error>(())
         });
 
         Ok(())
-    }
-
-    fn is_blocking(&self) -> bool {
-        false
     }
 }
 

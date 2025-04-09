@@ -3,20 +3,19 @@ use thiserror::Error;
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum Error {
-    #[error("Invalid record: {0}")]
-    InvalidRecord(String),
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Type(#[from] crate::core::types::Error),
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Conv(#[from] crate::core::types::conv::prometheus::Error),
     #[error(transparent)]
     Reqwuest(#[from] reqwest::Error),
     #[error(transparent)]
     Snap(#[from] snap::Error),
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Recv(#[from] crate::utils::recv::Error),
-    #[error("Request error: {0}")]
-    RequestError(String),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = miette::Result<T, Error>;

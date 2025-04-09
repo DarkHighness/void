@@ -9,14 +9,22 @@ pub use super::{Error, Result};
 pub mod auth;
 pub mod prometheus;
 pub mod stdio;
+pub mod parquet;
 
-#[derive(Debug, Serialize, Deserialize)]
+use self::{
+    prometheus::PrometheusOutboundConfig,
+    stdio::StdioOutboundConfig,
+    parquet::ParquetOutboundConfig,
+};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum OutboundConfig {
     #[serde(rename = "stdio")]
-    Stdio(stdio::StdioOutboundConfig),
-    Prometheus(prometheus::PrometheusOutboundConfig),
+    Stdio(StdioOutboundConfig),
+    Prometheus(PrometheusOutboundConfig),
+    Parquet(ParquetOutboundConfig),
 }
 
 impl HasTag for OutboundConfig {
@@ -24,6 +32,7 @@ impl HasTag for OutboundConfig {
         match self {
             OutboundConfig::Stdio(cfg) => &cfg.tag,
             OutboundConfig::Prometheus(cfg) => &cfg.tag,
+            OutboundConfig::Parquet(cfg) => &cfg.tag,
         }
     }
 }
@@ -33,6 +42,7 @@ impl OutboundConfig {
         match self {
             OutboundConfig::Stdio(cfg) => cfg.disabled,
             OutboundConfig::Prometheus(cfg) => cfg.disabled,
+            OutboundConfig::Parquet(cfg) => cfg.disabled,
         }
     }
 
@@ -40,6 +50,7 @@ impl OutboundConfig {
         match self {
             OutboundConfig::Stdio(cfg) => cfg.channel_scale_factor(),
             OutboundConfig::Prometheus(cfg) => cfg.channel_scale_factor(),
+            OutboundConfig::Parquet(cfg) => cfg.channel_scale_factor(),
         }
     }
 }
@@ -49,6 +60,7 @@ impl Verify for OutboundConfig {
         match self {
             OutboundConfig::Stdio(cfg) => cfg.verify(),
             OutboundConfig::Prometheus(cfg) => cfg.verify(),
+            OutboundConfig::Parquet(cfg) => cfg.verify(),
         }
     }
 }

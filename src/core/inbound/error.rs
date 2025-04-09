@@ -8,9 +8,8 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Protocol(#[from] crate::core::protocol::Error),
-    #[error("Channel closed: {0}")]
-    ChannelClosed(TagId),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = miette::Result<T, Error>;

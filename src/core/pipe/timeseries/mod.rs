@@ -74,7 +74,7 @@ impl InnerState {
         };
 
         let attrs = record.attributes().clone();
-        let tracing_ctx = record.tracing_context().clone();
+        let tracing_ctx = record.ctx().clone();
 
         let (labels, values) = record
             .take()

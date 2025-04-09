@@ -19,6 +19,11 @@ protocol = "control_csv"
 # disabled = true
 
 [[outbounds]]
+type = "parquet"
+inbounds = ["pipe:timeseries"]
+path = "a.parquet"
+
+[[outbounds]]
 type = "prometheus"
 inbounds = ["pipe:timeseries"]
 address = "env:PROMETHEUS_ADDRESS"

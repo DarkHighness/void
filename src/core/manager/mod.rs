@@ -36,7 +36,7 @@ pub fn try_create_from_config(cfg: Config) -> Result<Manager> {
     info!("Creating manager from config...");
 
     let mut channel_graph = timeit! { "Creating channel graph", {
-            ChannelGraph::try_create_from(&cfg.inbounds,&cfg.pipes, &cfg.outbounds)?
+            ChannelGraph::try_create_from(&cfg.inbounds, &cfg.pipes, &cfg.outbounds)?
     }};
 
     let inbounds = timeit! { "Creating inbounds", {
@@ -48,6 +48,7 @@ pub fn try_create_from_config(cfg: Config) -> Result<Manager> {
 
         cfg.inbounds
             .into_iter()
+            .filter(|e| !e.disabled())
             .map(|cfg| {
                 let protocol_id = cfg.protocol();
                 let protocol_cfg = protocols
@@ -65,6 +66,7 @@ pub fn try_create_from_config(cfg: Config) -> Result<Manager> {
     let pipes = timeit! { "Creating pipes", {
         cfg.pipes
             .into_iter()
+            .filter(|e| !e.disabled())
             .map(|cfg| {
                 let pipe = pipe::try_create_from(cfg, &mut channel_graph).map_err(actor::Error::from)?;
                 Ok(pipe)
@@ -75,6 +77,7 @@ pub fn try_create_from_config(cfg: Config) -> Result<Manager> {
     let outbounds = timeit! { "Creating outbounds", {
         cfg.outbounds
             .into_iter()
+            .filter(|e| !e.disabled())
             .map(|cfg| {
                 let outbound = outbound::try_create_from(cfg, &mut channel_graph).map_err(actor::Error::from)?;
                 Ok(outbound)

@@ -10,3 +10,5 @@ pub enum Error {
     #[error("Pipe error: {0}")]
     Pipe(#[from] crate::core::pipe::Error),
 }
+
+pub type Result<T> = miette::Result<T, Error>;

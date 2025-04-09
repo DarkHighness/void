@@ -12,8 +12,10 @@ pub enum Error {
     #[error("Field not found: {0}")]
     FieldNotFound(&'static str),
     #[error(transparent)]
+    #[diagnostic(transparent)]
     TypeError(#[from] crate::core::types::Error),
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Recv(#[from] crate::utils::recv::Error),
     #[error(transparent)]
     Send(#[from] tokio::sync::broadcast::error::SendError<Record>),
@@ -23,4 +25,4 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = miette::Result<T, Error>;

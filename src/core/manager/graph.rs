@@ -1,7 +1,7 @@
 use log::info;
 use petgraph::csr::DefaultIx;
-use std::hash::{Hash, Hasher};
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use tokio::sync::broadcast;
 
 use crate::config::global::{self};
@@ -166,15 +166,18 @@ impl ChannelGraph {
     ) -> super::Result<Self> {
         let tags = inbounds
             .iter()
+            .filter(|e| !e.disabled())
             .map(|e| (e.tag().clone(), 1))
             .chain(
                 pipes
                     .iter()
+                    .filter(|e| !e.disabled())
                     .map(|e| (e.tag().clone(), e.channel_scale_factor())),
             )
             .chain(
                 outbounds
                     .iter()
+                    .filter(|e| !e.disabled())
                     .map(|e| (e.tag().clone(), e.channel_scale_factor())),
             )
             .collect::<Vec<_>>();

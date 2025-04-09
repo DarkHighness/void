@@ -6,14 +6,14 @@ use crate::{
     config::Verify,
     core::{
         tag::ProtocolTagId,
-        types::{DataType, Symbol},
+        types::{Primitive, Symbol},
     },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CSVField {
     pub name: Symbol,
-    pub r#type: DataType,
+    pub r#type: Primitive,
     #[serde(default)]
     pub index: usize,
     #[serde(default)]

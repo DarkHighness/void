@@ -98,7 +98,7 @@ impl Actor for UnixSocketInbound {
     async fn poll(
         &mut self,
         ctx: tokio_util::sync::CancellationToken,
-    ) -> std::result::Result<(), super::Error> {
+    ) -> miette::Result<(), super::Error> {
         let new_connection = self.listener.accept();
 
         tokio::select! {

@@ -11,7 +11,7 @@ pub enum Error {
     MismatchedFormat(String),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = miette::Result<T, Error>;
 
 impl Error {
     pub fn is_eof(&self) -> bool {

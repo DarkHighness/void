@@ -21,4 +21,4 @@ pub enum Error {
     InvalidTomlConfig(#[from] toml::de::Error),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = miette::Result<T, Error>;

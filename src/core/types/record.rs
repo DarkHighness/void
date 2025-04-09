@@ -126,7 +126,7 @@ impl Record {
         &self.attributes
     }
 
-    pub fn tracing_context(&self) -> &Arc<TracingContext> {
+    pub fn ctx(&self) -> &Arc<TracingContext> {
         &self.tracing_ctx
     }
 

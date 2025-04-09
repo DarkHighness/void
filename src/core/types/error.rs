@@ -1,10 +1,16 @@
 use miette::Diagnostic;
 use thiserror::Error;
 
+use super::Primitive;
+
 #[derive(Debug, Error, Diagnostic)]
 pub enum Error {
     #[error("Invalid number format: {0}, expected: number or number unit")]
     InvalidNumberFormat(String),
+    #[error("Invalid map format: {0}, expected: {{key=value}}")]
+    InvalidMapFormat(String),
+    #[error("Invalid array format: {0}, expected: [value1, value2, ...]")]
+    InvalidArrayFormat(String),
     #[error("Invalid bool format: {0}, expected: true, false, yes, no, on, off, active, inactive, not active")]
     InvalidBoolFormat(String),
     #[error("Unknown datetime format {0}")]
@@ -25,4 +31,4 @@ pub enum Error {
     InvalidSliceRange(usize, usize, usize),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = miette::Result<T, Error>;

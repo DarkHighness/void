@@ -1,4 +1,3 @@
-
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -8,7 +7,7 @@ use crate::{
 
 use super::auth::AuthConfig;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrometheusOutboundConfig {
     #[serde(default = "default_prometheus_tag")]
     pub tag: OutboundTagId,

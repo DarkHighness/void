@@ -4,16 +4,13 @@ use chrono::{Offset, TimeZone};
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 
-use super::DataType;
+pub use super::data_type::{
+    BOOL_TYPE, DATETIME_TYPE, FLOAT_TYPE, INT_TYPE, NULL_TYPE, STRING_TYPE,
+};
+use super::{Primitive, Symbol};
 
-pub const VALUE_TYPE_NULL: &str = "null";
-pub const VALUE_TYPE_STRING: &str = "string";
-pub const VALUE_TYPE_INT: &str = "int";
-pub const VALUE_TYPE_FLOAT: &str = "float";
-pub const VALUE_TYPE_BOOL: &str = "bool";
-pub const VALUE_TYPE_DATETIME: &str = "datetime";
-pub const VALUE_TYPE_MAP: &str = "map";
-pub const VALUE_TYPE_ARRAY: &str = "array";
+pub const MAP_TYPE: &'static str = "map";
+pub const ARRAY_TYPE: &'static str = "array";
 
 // Add Guard type definition
 pub struct StringGuard<'a>(&'a super::string::Symbol);
@@ -284,6 +281,84 @@ pub enum Value {
     DateTime(chrono::DateTime<chrono::Utc>),
     Map(HashMap<Value, Value>),
     Array(Vec<Value>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ValueType {
+    Null,
+    String,
+    Int,
+    Float,
+    Bool,
+    DateTime,
+    Map,
+    Array,
+}
+
+impl ValueType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ValueType::Null => NULL_TYPE,
+            ValueType::String => STRING_TYPE,
+            ValueType::Int => INT_TYPE,
+            ValueType::Float => FLOAT_TYPE,
+            ValueType::Bool => BOOL_TYPE,
+            ValueType::DateTime => DATETIME_TYPE,
+            ValueType::Map => MAP_TYPE,
+            ValueType::Array => ARRAY_TYPE,
+        }
+    }
+
+    pub fn is_primitive(&self) -> bool {
+        matches!(
+            self,
+            ValueType::Null
+                | ValueType::String
+                | ValueType::Int
+                | ValueType::Float
+                | ValueType::Bool
+        )
+    }
+
+    pub fn is_complex(&self) -> bool {
+        matches!(self, ValueType::Map | ValueType::Array)
+    }
+}
+
+impl TryInto<Primitive> for ValueType {
+    type Error = super::Error;
+
+    fn try_into(self) -> Result<Primitive, Self::Error> {
+        match self {
+            ValueType::Null => Ok(Primitive::Null),
+            ValueType::String => Ok(Primitive::String),
+            ValueType::Int => Ok(Primitive::Int),
+            ValueType::Float => Ok(Primitive::Float),
+            ValueType::Bool => Ok(Primitive::Bool),
+            ValueType::DateTime => Ok(Primitive::DateTime),
+            ValueType::Map => Err(super::Error::InvalidValueType(MAP_TYPE.to_string())),
+            ValueType::Array => Err(super::Error::InvalidValueType(ARRAY_TYPE.to_string())),
+        }
+    }
+}
+
+impl From<&Primitive> for ValueType {
+    fn from(primitive: &Primitive) -> Self {
+        match primitive {
+            Primitive::Null => ValueType::Null,
+            Primitive::String => ValueType::String,
+            Primitive::Int => ValueType::Int,
+            Primitive::Float => ValueType::Float,
+            Primitive::Bool => ValueType::Bool,
+            Primitive::DateTime => ValueType::DateTime,
+        }
+    }
+}
+
+impl From<Primitive> for ValueType {
+    fn from(primitive: Primitive) -> Self {
+        From::from(&primitive)
+    }
 }
 
 pub trait Num {}
@@ -629,16 +704,36 @@ impl Value {
         matches!(self, Value::Array(_))
     }
 
+    pub fn is_primitive(&self) -> bool {
+        self.type_().is_primitive()
+    }
+
+    pub fn is_complex(&self) -> bool {
+        self.type_().is_complex()
+    }
+
+    pub fn type_(&self) -> ValueType {
+        match self {
+            Value::Null => ValueType::Null,
+            Value::String(_) => ValueType::String,
+            Value::Int(_) => ValueType::Int,
+            Value::Float(_) => ValueType::Float,
+            Value::Bool(_) => ValueType::Bool,
+            Value::DateTime(_) => ValueType::DateTime,
+            Value::Map(_) => ValueType::Map,
+            Value::Array(_) => ValueType::Array,
+        }
+    }
     pub fn type_name(&self) -> &'static str {
         match self {
-            Value::Null => VALUE_TYPE_NULL,
-            Value::String(_) => VALUE_TYPE_STRING,
-            Value::Int(_) => VALUE_TYPE_INT,
-            Value::Float(_) => VALUE_TYPE_FLOAT,
-            Value::Bool(_) => VALUE_TYPE_BOOL,
-            Value::DateTime(_) => VALUE_TYPE_DATETIME,
-            Value::Map(_) => VALUE_TYPE_MAP,
-            Value::Array(_) => VALUE_TYPE_ARRAY,
+            Value::Null => NULL_TYPE,
+            Value::String(_) => STRING_TYPE,
+            Value::Int(_) => INT_TYPE,
+            Value::Float(_) => FLOAT_TYPE,
+            Value::Bool(_) => BOOL_TYPE,
+            Value::DateTime(_) => DATETIME_TYPE,
+            Value::Map(_) => MAP_TYPE,
+            Value::Array(_) => ARRAY_TYPE,
         }
     }
 
@@ -649,10 +744,7 @@ impl Value {
             Value::Float(number) => Ok(Value::String(number.to_string().into())),
             Value::Bool(boolean) => Ok(Value::String(boolean.to_string().into())),
             Value::DateTime(datetime) => Ok(Value::String(datetime.to_rfc3339().into())),
-            _ => Err(super::Error::CanNotCast(
-                self.type_name(),
-                VALUE_TYPE_STRING,
-            )),
+            _ => Err(super::Error::CanNotCast(self.type_name(), STRING_TYPE)),
         }
     }
 
@@ -664,7 +756,7 @@ impl Value {
                 value: if *boolean { 1.0 } else { 0.0 },
                 unit: None,
             })),
-            _ => Err(super::Error::CanNotCast(self.type_name(), VALUE_TYPE_FLOAT)),
+            _ => Err(super::Error::CanNotCast(self.type_name(), FLOAT_TYPE)),
         }
     }
 
@@ -672,7 +764,7 @@ impl Value {
         if let Value::String(string) = self {
             Ok(StringGuard(string))
         } else {
-            Err(super::Error::UnexpectedType("string", self.type_name()))
+            Err(super::Error::UnexpectedType(STRING_TYPE, self.type_name()))
         }
     }
 
@@ -680,7 +772,7 @@ impl Value {
         if let Value::Int(number) = self {
             Ok(IntGuard(number))
         } else {
-            Err(super::Error::UnexpectedType("int", self.type_name()))
+            Err(super::Error::UnexpectedType(INT_TYPE, self.type_name()))
         }
     }
 
@@ -688,7 +780,7 @@ impl Value {
         if let Value::Float(number) = self {
             Ok(FloatGuard(number))
         } else {
-            Err(super::Error::UnexpectedType("float", self.type_name()))
+            Err(super::Error::UnexpectedType(FLOAT_TYPE, self.type_name()))
         }
     }
 
@@ -696,7 +788,7 @@ impl Value {
         if let Value::Bool(boolean) = self {
             Ok(BoolGuard(*boolean))
         } else {
-            Err(super::Error::UnexpectedType("bool", self.type_name()))
+            Err(super::Error::UnexpectedType(BOOL_TYPE, self.type_name()))
         }
     }
 
@@ -704,7 +796,10 @@ impl Value {
         if let Value::DateTime(datetime) = self {
             Ok(DateTimeGuard(datetime))
         } else {
-            Err(super::Error::UnexpectedType("datetime", self.type_name()))
+            Err(super::Error::UnexpectedType(
+                DATETIME_TYPE,
+                self.type_name(),
+            ))
         }
     }
 
@@ -712,7 +807,7 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(MapGuard(map))
         } else {
-            Err(super::Error::UnexpectedType("map", self.type_name()))
+            Err(super::Error::UnexpectedType(MAP_TYPE, self.type_name()))
         }
     }
 
@@ -720,7 +815,7 @@ impl Value {
         if let Value::Map(map) = self {
             Ok(MapGuardMut(map))
         } else {
-            Err(super::Error::UnexpectedType("map", self.type_name()))
+            Err(super::Error::UnexpectedType(MAP_TYPE, self.type_name()))
         }
     }
 
@@ -728,7 +823,7 @@ impl Value {
         if let Value::Array(array) = self {
             Ok(ArrayGuard(array))
         } else {
-            Err(super::Error::UnexpectedType("array", self.type_name()))
+            Err(super::Error::UnexpectedType(ARRAY_TYPE, self.type_name()))
         }
     }
 
@@ -736,7 +831,7 @@ impl Value {
         if let Value::Array(array) = self {
             Ok(ArrayGuardMut(array))
         } else {
-            Err(super::Error::UnexpectedType("array", self.type_name()))
+            Err(super::Error::UnexpectedType(ARRAY_TYPE, self.type_name()))
         }
     }
 }
@@ -744,43 +839,43 @@ impl Value {
 impl Hash for Value {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            Value::Null => VALUE_TYPE_NULL.hash(state),
+            Value::Null => NULL_TYPE.hash(state),
             Value::String(string) => {
-                VALUE_TYPE_STRING.hash(state);
+                STRING_TYPE.hash(state);
                 string.hash(state);
             }
             Value::Int(number) => {
-                VALUE_TYPE_INT.hash(state);
+                INT_TYPE.hash(state);
                 number.value.hash(state);
                 if let Some(unit) = &number.unit {
                     unit.hash(state);
                 }
             }
             Value::Float(number) => {
-                VALUE_TYPE_FLOAT.hash(state);
+                FLOAT_TYPE.hash(state);
                 number.value.to_bits().hash(state);
                 if let Some(unit) = &number.unit {
                     unit.hash(state);
                 }
             }
             Value::Bool(boolean) => {
-                VALUE_TYPE_BOOL.hash(state);
+                BOOL_TYPE.hash(state);
                 boolean.hash(state);
             }
             Value::DateTime(datetime) => {
-                VALUE_TYPE_DATETIME.hash(state);
+                DATETIME_TYPE.hash(state);
                 datetime.timestamp().hash(state);
                 datetime.timestamp_subsec_nanos().hash(state);
             }
             Value::Map(map) => {
-                VALUE_TYPE_MAP.hash(state);
+                MAP_TYPE.hash(state);
                 for (key, value) in map {
                     key.hash(state);
                     value.hash(state);
                 }
             }
             Value::Array(array) => {
-                VALUE_TYPE_ARRAY.hash(state);
+                ARRAY_TYPE.hash(state);
                 for value in array {
                     value.hash(state);
                 }
@@ -826,16 +921,16 @@ where
     let parts: Vec<&str> = value.split_whitespace().collect();
     match parts.len() {
         1 => {
-            let number = parts[0].parse::<T>().map_err(|_| {
-                super::Error::InvalidNumberFormat(format!("Invalid number format: {}", value))
-            })?;
+            let number = parts[0]
+                .parse::<T>()
+                .map_err(|_| super::Error::InvalidNumberFormat(value.to_string()))?;
 
             Ok(number.into())
         }
         2 => {
-            let number = parts[0].parse::<T>().map_err(|_| {
-                super::Error::InvalidNumberFormat(format!("Invalid number format: {}", value))
-            })?;
+            let number = parts[0]
+                .parse::<T>()
+                .map_err(|_| super::Error::InvalidNumberFormat(value.to_string()))?;
 
             let unit = parts[1].to_string();
             let number = Number::new_with_unit(number, unit);
@@ -933,21 +1028,88 @@ fn parse_datetime_value(value: &str) -> super::Result<Value> {
     Err(super::Error::UnknownDatetimeFormat(value.to_string()))
 }
 
-pub fn parse_value(value: &str, data_type: &DataType) -> super::Result<Value> {
+fn parse_map_value(value: &str) -> super::Result<Value> {
+    let mut map = HashMap::new();
+
+    for field in value.split(',') {
+        let parts: Vec<&str> = field.split('=').collect();
+        if parts.len() != 2 {
+            return Err(super::Error::InvalidMapFormat(value.to_string()));
+        }
+        let key = Value::from(parts[0].trim());
+        let value = parse_primitive_value(parts[1].trim())?;
+        map.insert(key, value);
+    }
+
+    Ok(Value::Map(map))
+}
+
+fn parse_array_value(value: &str) -> super::Result<Value> {
+    let mut array = Vec::new();
+    for item in value.split(',') {
+        let item = item.trim();
+        if !item.is_empty() {
+            let value = parse_primitive_value(item)?;
+            array.push(value);
+        }
+    }
+    Ok(Value::Array(array))
+}
+
+fn parse_primitive_value(value: &str) -> super::Result<Value> {
+    if value.eq_ignore_ascii_case("null") {
+        return Ok(Value::Null);
+    } else if value.eq_ignore_ascii_case("true") {
+        return Ok(Value::Bool(true));
+    } else if value.eq_ignore_ascii_case("false") {
+        return Ok(Value::Bool(false));
+    } else if let Ok(int_val) = value.parse::<i64>() {
+        return Ok(Value::Int(Number::new(int_val)));
+    } else if let Ok(float_val) = value.parse::<f64>() {
+        return Ok(Value::Float(Number::new(float_val)));
+    } else if value.starts_with("{") && value.ends_with("}") {
+        let inner = &value[1..value.len() - 1];
+        return parse_map_value(inner);
+    } else if value.starts_with("[") && value.ends_with("]") {
+        let inner = &value[1..value.len() - 1];
+        return parse_array_value(inner);
+    }
+
+    Ok(Value::String(super::string::intern(value)))
+}
+
+pub fn parse_value(value: &str, typ: ValueType) -> super::Result<Value> {
     let value = value.trim();
     if value.is_empty() {
         return Ok(Value::Null);
     }
 
-    let value = match data_type {
-        DataType::String => value.into(),
-        DataType::Int => parse_number_value::<i64>(value)?,
-        DataType::Float => parse_number_value::<f64>(value)?,
-        DataType::Bool => parse_bool_value(value)?,
-        DataType::DateTime => parse_datetime_value(value)?,
-    };
+    match typ {
+        ValueType::Null => return Ok(Value::Null),
+        ValueType::String => return Ok(Value::String(super::string::intern(value))),
+        ValueType::Int => return parse_number_value::<i64>(value),
+        ValueType::Float => return parse_number_value::<f64>(value),
+        ValueType::Bool => return parse_bool_value(value),
+        ValueType::DateTime => return parse_datetime_value(value),
+        ValueType::Map => {
+            if value.starts_with('{') && value.ends_with('}') {
+                let inner = &value[1..value.len() - 1];
+                return parse_map_value(inner);
+            }
 
-    Ok(value)
+            return Err(super::Error::InvalidMapFormat(value.to_string()));
+        }
+        ValueType::Array => {
+            if value.starts_with('[') && value.ends_with(']') {
+                let inner = &value[1..value.len() - 1];
+                return parse_array_value(inner);
+            }
+
+            return Err(super::Error::InvalidArrayFormat(value.to_string()));
+        }
+    }
+
+    parse_primitive_value(value)
 }
 
 #[cfg(test)]
@@ -1028,14 +1190,14 @@ mod tests {
 
     #[test]
     fn test_value_type_name() {
-        assert_eq!(null().type_name(), VALUE_TYPE_NULL);
-        assert_eq!(string("test").type_name(), VALUE_TYPE_STRING);
-        assert_eq!(int(42).type_name(), VALUE_TYPE_INT);
-        assert_eq!(float(3.14).type_name(), VALUE_TYPE_FLOAT);
-        assert_eq!(bool_val(true).type_name(), VALUE_TYPE_BOOL);
-        assert_eq!(datetime(1609459200).type_name(), VALUE_TYPE_DATETIME);
-        assert_eq!(map().type_name(), VALUE_TYPE_MAP);
-        assert_eq!(array().type_name(), VALUE_TYPE_ARRAY);
+        assert_eq!(null().type_name(), NULL_TYPE);
+        assert_eq!(string("test").type_name(), STRING_TYPE);
+        assert_eq!(int(42).type_name(), INT_TYPE);
+        assert_eq!(float(3.14).type_name(), FLOAT_TYPE);
+        assert_eq!(bool_val(true).type_name(), BOOL_TYPE);
+        assert_eq!(datetime(1609459200).type_name(), DATETIME_TYPE);
+        assert_eq!(map().type_name(), MAP_TYPE);
+        assert_eq!(array().type_name(), ARRAY_TYPE);
     }
 
     #[test]

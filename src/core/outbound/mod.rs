@@ -1,5 +1,6 @@
 mod base;
 mod error;
+pub mod parquet;
 pub mod prometheus;
 pub mod stdio;
 
@@ -21,5 +22,8 @@ pub fn try_create_from(
         OutboundConfig::Prometheus(cfg) => Ok(Box::new(
             prometheus::PrometheusOutbound::try_create_from(cfg, channels)?,
         )),
+        OutboundConfig::Parquet(cfg) => Ok(Box::new(parquet::ParquetOutbound::try_create_from(
+            cfg, channels,
+        )?)),
     }
 }

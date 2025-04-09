@@ -14,9 +14,10 @@ pub enum Error {
     #[error("Duplicate tag: {0}")]
     DuplicateTag(TagId),
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Actor(#[from] crate::core::actor::Error),
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = miette::Result<T, Error>;

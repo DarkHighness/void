@@ -16,7 +16,7 @@ use tokio::io::AsyncReadExt;
 use crate::{
     config::protocol::csv::CSVProtocolConfig,
     core::protocol,
-    core::types::{parse_value, DataType, Record, Symbol, SymbolMap},
+    core::types::{parse_value, Primitive, Record, Symbol, SymbolMap},
     utils::tracing::TracingContext,
 };
 
@@ -29,7 +29,7 @@ pub struct CSVProtocolParser<R> {
     has_header: bool,
     header_skipped: bool,
 
-    fields: HashMap<usize, (Symbol, DataType, bool)>,
+    fields: HashMap<usize, (Symbol, Primitive, bool)>,
 
     num_required_fields: usize,
     num_optional_fields: usize,
@@ -224,7 +224,7 @@ where
                     }
                 }
 
-                let parsed_value = parse_value(field_str, data_type).map_err(|_| {
+                let parsed_value = parse_value(field_str, data_type.into()).map_err(|_| {
                     protocol::Error::MismatchedFormat(format!(
                         "Failed to parse field {}: {}, expected {}",
                         name, field_str, data_type
@@ -308,7 +308,7 @@ mod tests {
     use crate::core::protocol::{Error, ProtocolParser};
     use crate::core::tag::{TagId, PROTOCOL_TAG_SCOPE};
     use crate::core::types::intern;
-    use crate::core::types::{DataType, Symbol, Value};
+    use crate::core::types::{Primitive, Symbol, Value};
 
     use super::*;
 
@@ -322,19 +322,19 @@ mod tests {
                 CSVField {
                     index: 0,
                     name: Symbol::new("name"),
-                    r#type: DataType::String,
+                    r#type: Primitive::String,
                     optional: false,
                 },
                 CSVField {
                     index: 1,
                     name: Symbol::new("age"),
-                    r#type: DataType::Int,
+                    r#type: Primitive::Int,
                     optional: false,
                 },
                 CSVField {
                     index: 2,
                     name: Symbol::new("active"),
-                    r#type: DataType::Bool,
+                    r#type: Primitive::Bool,
                     optional: false,
                 },
             ],
@@ -565,31 +565,31 @@ mod tests {
                 CSVField {
                     index: 0,
                     name: Symbol::new("string"),
-                    r#type: DataType::String,
+                    r#type: Primitive::String,
                     optional: false,
                 },
                 CSVField {
                     index: 1,
                     name: Symbol::new("int"),
-                    r#type: DataType::Int,
+                    r#type: Primitive::Int,
                     optional: false,
                 },
                 CSVField {
                     index: 2,
                     name: Symbol::new("float"),
-                    r#type: DataType::Float,
+                    r#type: Primitive::Float,
                     optional: false,
                 },
                 CSVField {
                     index: 3,
                     name: Symbol::new("bool"),
-                    r#type: DataType::Bool,
+                    r#type: Primitive::Bool,
                     optional: false,
                 },
                 CSVField {
                     index: 4,
                     name: Symbol::new("date"),
-                    r#type: DataType::String, // Using string for date in this test
+                    r#type: Primitive::String, // Using string for date in this test
                     optional: false,
                 },
             ],
@@ -692,19 +692,19 @@ mod tests {
                 CSVField {
                     index: 0,
                     name: Symbol::new("id"),
-                    r#type: DataType::Int,
+                    r#type: Primitive::Int,
                     optional: false,
                 },
                 CSVField {
                     index: 1,
                     name: Symbol::new("name"),
-                    r#type: DataType::String,
+                    r#type: Primitive::String,
                     optional: false,
                 },
                 CSVField {
                     index: 2,
                     name: Symbol::new("score"),
-                    r#type: DataType::String,
+                    r#type: Primitive::String,
                     optional: false,
                 },
             ],
