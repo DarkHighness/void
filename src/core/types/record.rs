@@ -110,6 +110,10 @@ impl Record {
         self.attributes.get_mut(key)
     }
 
+    pub fn set_type(&mut self, value: Value) {
+        self.set_attribute(Attribute::Type, value);
+    }
+
     pub fn get_type(&self) -> Option<&Value> {
         self.get_attribute(&Attribute::Type)
     }

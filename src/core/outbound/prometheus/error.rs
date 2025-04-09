@@ -8,6 +8,8 @@ pub enum Error {
     #[error(transparent)]
     Type(#[from] crate::core::types::Error),
     #[error(transparent)]
+    Conv(#[from] crate::core::types::conv::prometheus::Error),
+    #[error(transparent)]
     Reqwuest(#[from] reqwest::Error),
     #[error(transparent)]
     Snap(#[from] snap::Error),

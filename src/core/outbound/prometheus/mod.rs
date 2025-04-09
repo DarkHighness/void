@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use crate::{
     config::{
         global::use_time_tracing,
@@ -6,18 +8,18 @@ use crate::{
     core::{
         actor::Actor,
         manager::{ChannelGraph, TaggedReceiver},
+        pipe::RECORD_TYPE_TIMESERIES_VALUE,
         tag::{HasTag, TagId},
+        types::conv::prometheus::WriteRequest,
     },
     utils::recv::recv_batch,
 };
 
 pub mod error;
-pub mod r#type;
 
 use async_trait::async_trait;
 pub use error::{Error, Result};
 use log::{error, info, warn};
-use r#type::WriteRequest;
 use tokio_util::sync::CancellationToken;
 
 use super::Outbound;
@@ -90,6 +92,33 @@ impl Actor for PrometheusOutbound {
                 Err(e) => return Err(e.into()),
             };
 
+        if records.is_empty() {
+            return Ok(());
+        }
+
+        let before_len = records.len();
+        let records = records
+            .into_iter()
+            .filter_map(|record| {
+                let r#type = record.get_type()?;
+
+                if r#type != RECORD_TYPE_TIMESERIES_VALUE.deref() {
+                    return None;
+                }
+
+                Some(record)
+            })
+            .collect::<Vec<_>>();
+        let after_len = records.len();
+        if after_len != before_len {
+            warn!(
+                "{}: filtered {} records with wrong types, {} left",
+                tag,
+                before_len - after_len,
+                after_len
+            );
+        }
+
         for record in &records {
             record.mark_record_release();
         }
@@ -101,7 +130,8 @@ impl Actor for PrometheusOutbound {
         let transform_start_timestamp = std::time::Instant::now();
 
         let _ = tokio::task::spawn(async move {
-            let tss = r#type::transform_timeseries(records)?;
+            let tss = crate::core::types::conv::prometheus::transform_timeseries(records)
+                .map_err(error::Error::from)?;
 
             let last_timestamp = tss
                 .iter()
@@ -122,7 +152,9 @@ impl Actor for PrometheusOutbound {
                 );
             }
             let request: WriteRequest = tss.into();
-            let request = request.build_request(&client, &auth, &address, "void")?;
+            let request = request
+                .build_request(&client, &auth, &address, "void")
+                .map_err(Error::from)?;
 
             // spawn a task to send the request
             let response = request.send().await;
