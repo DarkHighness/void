@@ -1,8 +1,6 @@
 use miette::Diagnostic;
 use thiserror::Error;
 
-use crate::core::tag::TagId;
-
 #[derive(Debug, Error, Diagnostic)]
 pub enum Error {
     #[error(transparent)]

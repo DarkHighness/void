@@ -2,11 +2,7 @@ use serde_json::{Map, Value as JsonValue};
 use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::core::types::{
-    intern, resolve,
-    value::{Number},
-    Record, Value,
-};
+use crate::core::types::{intern, resolve, value::Number, Record, Value};
 
 #[derive(Debug, Error)]
 pub enum ConversionError {

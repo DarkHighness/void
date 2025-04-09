@@ -7,14 +7,13 @@ use super::Verify;
 pub use super::{Error, Result};
 
 pub mod auth;
+pub mod parquet;
 pub mod prometheus;
 pub mod stdio;
-pub mod parquet;
 
 use self::{
-    prometheus::PrometheusOutboundConfig,
+    parquet::ParquetOutboundConfig, prometheus::PrometheusOutboundConfig,
     stdio::StdioOutboundConfig,
-    parquet::ParquetOutboundConfig,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

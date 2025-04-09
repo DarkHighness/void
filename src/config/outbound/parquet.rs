@@ -1,5 +1,5 @@
 use crate::{
-    config::Verify,
+    config::{template::Template, Verify},
     core::tag::{OutboundTagId, TagId},
 };
 use parquet::basic::{BrotliLevel, GzipLevel};
@@ -51,15 +51,11 @@ pub struct ParquetOutboundConfig {
     pub inbounds: Vec<TagId>,
 
     /// Path to the output Parquet file
-    pub path: PathBuf,
+    pub path: Template<PathBuf>,
 
     /// Maximum number of records to batch before writing
     #[serde(default = "default_batch_size")]
     pub batch_size: usize,
-
-    /// Whether to append to existing file or create a new one
-    #[serde(default)]
-    pub append: bool,
 
     /// Compression codec to use
     #[serde(default)]

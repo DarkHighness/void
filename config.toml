@@ -20,8 +20,8 @@ protocol = "control_csv"
 
 [[outbounds]]
 type = "parquet"
-inbounds = ["pipe:timeseries"]
-path = "a.parquet"
+inbounds = ["inbound:data"]
+path = "a-{{hostname}}.parquet"
 
 [[outbounds]]
 type = "prometheus"

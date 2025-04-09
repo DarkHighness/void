@@ -1,8 +1,6 @@
 use miette::Diagnostic;
 use thiserror::Error;
 
-use super::Primitive;
-
 #[derive(Debug, Error, Diagnostic)]
 pub enum Error {
     #[error("Invalid number format: {0}, expected: number or number unit")]

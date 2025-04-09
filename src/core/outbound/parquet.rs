@@ -1,19 +1,12 @@
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
-use arrow::datatypes::{Schema, SchemaRef};
-use arrow::record_batch::RecordBatch;
+use arrow::datatypes::SchemaRef;
 use async_trait::async_trait;
 use log::{error, info};
-use parquet::arrow::ArrowWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::outbound::parquet::ParquetOutboundConfig;
-use crate::core::types::conv::parquet::{records_to_arrow_schema, records_to_record_batch, Error};
+use crate::core::types::conv::parquet::ParquetWriter;
 use crate::core::{
     actor::Actor,
     manager::{ChannelGraph, TaggedReceiver},
@@ -29,10 +22,10 @@ pub struct ParquetOutbound {
     path: String,
     batch_size: usize,
     compression: Compression,
-    append: bool,
     inbounds: Vec<TaggedReceiver>,
     schema: Option<SchemaRef>,
     records_buffer: Vec<Record>,
+    writer: Option<ParquetWriter>,
 }
 
 impl HasTag for ParquetOutbound {
@@ -64,10 +57,10 @@ impl ParquetOutbound {
             path,
             batch_size: cfg.batch_size,
             compression,
-            append: cfg.append,
             inbounds,
             schema: None,
             records_buffer: Vec::with_capacity(cfg.batch_size),
+            writer: None,
         })
     }
 
@@ -76,54 +69,43 @@ impl ParquetOutbound {
             return Ok(());
         }
 
-        // Create schema from the first record if not created yet
-        if self.schema.is_none() && !self.records_buffer.is_empty() {
-            let schema = records_to_arrow_schema(&self.records_buffer)?;
-            self.schema = Some(schema);
+        // Initialize schema and writer if needed
+        if self.writer.is_none() {
+            // Get or create schema based on first record
+            let schema = if let Some(ref schema) = self.schema {
+                schema.clone()
+            } else {
+                let schema =
+                    crate::core::types::conv::parquet::record_to_schema(&self.records_buffer[0])?;
+                self.schema = Some(schema.clone());
+                schema
+            };
+
+            // Setup writer properties with compression
+            let props_builder = WriterProperties::builder().set_compression(self.compression);
+            let props = props_builder.build();
+
+            // Create a new writer
+            self.writer = Some(ParquetWriter::with_properties(
+                &self.path,
+                schema,
+                Some(props),
+            )?);
         }
 
-        let schema = match &self.schema {
-            Some(s) => s.clone(),
-            None => return Ok(()),
-        };
+        // Write records using our writer
+        if let Some(writer) = &mut self.writer {
+            writer.write_records(&self.records_buffer)?;
 
-        // Convert records to Arrow RecordBatch
-        let record_batch = records_to_record_batch(&self.records_buffer, schema.clone())?;
+            info!(
+                "Wrote {} records to {}",
+                self.records_buffer.len(),
+                self.path
+            );
 
-        // Ensure directory exists
-        if let Some(parent) = Path::new(&self.path).parent() {
-            tokio::fs::create_dir_all(parent).await?;
+            // Clear buffer after successful write
+            self.records_buffer.clear();
         }
-
-        // Check if file exists and we're appending
-        let file_exists = tokio::fs::metadata(&self.path).await.is_ok();
-
-        if file_exists && self.append {
-            // Append to existing file - this requires reading the schema first
-            // For now, we'll just error out as true append support would require more complex code
-            panic!("Appending to existing Parquet files is not supported yet");
-        }
-
-        // Open file and write the batch
-        let file = File::create(&self.path).await?;
-
-        let file = file.into_std().await;
-
-        let props = WriterProperties::builder()
-            .set_compression(self.compression)
-            .build();
-
-        let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props))?;
-        writer.write(&record_batch)?;
-        writer.close()?;
-
-        info!(
-            "{}: Wrote {} records to {}",
-            self.tag,
-            self.records_buffer.len(),
-            self.path
-        );
-        self.records_buffer.clear();
 
         Ok(())
     }
@@ -176,5 +158,17 @@ impl Actor for ParquetOutbound {
 impl Outbound for ParquetOutbound {
     fn inbounds(&mut self) -> &mut [TaggedReceiver] {
         &mut self.inbounds
+    }
+}
+
+// Implement Drop to ensure writer is closed properly
+impl Drop for ParquetOutbound {
+    fn drop(&mut self) {
+        if let Some(writer) = self.writer.take() {
+            // Try to close the writer
+            if let Err(e) = writer.close() {
+                error!("Error closing parquet writer: {}", e);
+            }
+        }
     }
 }

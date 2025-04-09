@@ -7,7 +7,7 @@ use std::hash::Hash;
 pub use super::data_type::{
     BOOL_TYPE, DATETIME_TYPE, FLOAT_TYPE, INT_TYPE, NULL_TYPE, STRING_TYPE,
 };
-use super::{Primitive, Symbol};
+use super::Primitive;
 
 pub const MAP_TYPE: &'static str = "map";
 pub const ARRAY_TYPE: &'static str = "array";

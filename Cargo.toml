@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+jemallocator = { version = "*" }
 # Logging
 log = "0.4"
 fern = { version = "0.7", features = ["colored"] }
@@ -44,6 +45,9 @@ go-parse-duration = "0.1.1"
 # Utilities
 string-join = "0.1.2"
 lasso = { version = "0.7.3", features = ["multi-threaded"]}
+uuid = { version = "1.16.0", features = ["v4"] }
+rand = "0.9.0"
+hostname = "0.4.1"
 
 # Graph
 petgraph = "0.8"
@@ -59,6 +63,7 @@ num_cpus = "1.16.0"
 nom = "8"
 parquet = "54.3.1"
 arrow = "54.3.1"
+regex = "1.11.1"
 
 [dev-dependencies]
 tempfile = "3.19.1"

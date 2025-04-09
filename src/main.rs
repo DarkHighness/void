@@ -10,6 +10,11 @@ use fern::colors::{Color, ColoredLevelConfig};
 use log::{info, warn};
 use miette::IntoDiagnostic;
 
+use jemallocator::Jemalloc;
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 fn setup_logger() -> std::result::Result<(), fern::InitError> {
     let colors = ColoredLevelConfig::new()
         .debug(Color::Cyan)

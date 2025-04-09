@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, sync::Arc};
+use std::{collections::BTreeMap, fmt::Display, sync::Arc};
 
 use crate::{
     config::global::use_time_tracing,
@@ -8,7 +8,7 @@ use crate::{
 
 use super::{Symbol, Value};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Attribute {
     Inbound,
     Type,
@@ -23,8 +23,8 @@ impl Display for Attribute {
     }
 }
 
-pub type AttributeMap = HashMap<Attribute, Value>;
-pub type SymbolMap = HashMap<Symbol, Value>;
+pub type AttributeMap = BTreeMap<Attribute, Value>;
+pub type SymbolMap = BTreeMap<Symbol, Value>;
 
 #[derive(Debug, Clone)]
 pub struct Record {
@@ -168,7 +168,7 @@ impl std::ops::Index<&Symbol> for Record {
 }
 
 impl std::ops::Deref for Record {
-    type Target = HashMap<Symbol, Value>;
+    type Target = BTreeMap<Symbol, Value>;
 
     fn deref(&self) -> &Self::Target {
         &self.values
@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn test_from_hashmap() {
-        let mut values = HashMap::new();
+        let mut values = SymbolMap::new();
         let key = Symbol::from("test_key");
         let value = Value::String(Symbol::from("test_value"));
         values.insert(key.clone(), value.clone());

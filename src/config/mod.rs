@@ -5,6 +5,7 @@ pub mod inbound;
 pub mod outbound;
 pub mod pipe;
 pub mod protocol;
+pub mod template;
 
 use std::path::PathBuf;
 

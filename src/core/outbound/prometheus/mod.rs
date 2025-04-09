@@ -19,7 +19,7 @@ pub mod error;
 
 use async_trait::async_trait;
 pub use error::{Error, Result};
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
 use tokio_util::sync::CancellationToken;
 
 use super::Outbound;
