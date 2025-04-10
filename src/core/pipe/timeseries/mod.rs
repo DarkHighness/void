@@ -97,7 +97,8 @@ impl InnerState {
                         let in_labels = self.label_syms.contains(sym);
                         let in_timestamp =
                             self.timestamp_sym.as_ref().map_or(false, |ts| ts == sym);
-                        !in_labels && !in_timestamp
+                        let in_name = sym.as_str() == NAME_FIELD.as_ref();
+                        !in_labels && !in_timestamp && !in_name
                     }
                 });
 
@@ -252,7 +253,7 @@ impl TimeseriesPipe {
             .filter_map(|r| match r {
                 Ok(records) => Some(records),
                 Err(e) => {
-                    warn!("{}: error transforming record: {}", inner.tag, e);
+                    warn!("{}: error transforming record: {:?}", inner.tag, e);
                     None
                 }
             })

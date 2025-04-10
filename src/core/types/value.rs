@@ -477,6 +477,42 @@ impl AsRef<f64> for Number<f64> {
     }
 }
 
+impl From<i64> for Number<i64> {
+    fn from(value: i64) -> Self {
+        Number::new(value)
+    }
+}
+
+impl From<f64> for Number<f64> {
+    fn from(value: f64) -> Self {
+        Number::new(value)
+    }
+}
+
+impl From<i64> for Value {
+    fn from(value: i64) -> Self {
+        Value::Int(Number::new(value))
+    }
+}
+
+impl From<f64> for Value {
+    fn from(value: f64) -> Self {
+        Value::Float(Number::new(value))
+    }
+}
+
+impl From<Number<i64>> for Value {
+    fn from(number: Number<i64>) -> Self {
+        Value::Int(number)
+    }
+}
+
+impl From<Number<f64>> for Value {
+    fn from(number: Number<f64>) -> Self {
+        Value::Float(number)
+    }
+}
+
 /*
 1. If the unit is not present, it will be serialized as a number.
 2. If the unit is present, it will be serialized as a string with the unit appended.
@@ -539,30 +575,6 @@ impl<'de> Deserialize<'de> for Number<f64> {
             Value::Float(number) => Ok(number),
             _ => Err(serde::de::Error::custom("expected a number")),
         }
-    }
-}
-
-impl From<i64> for Value {
-    fn from(number: i64) -> Self {
-        Value::Int(Number::new(number))
-    }
-}
-
-impl From<f64> for Value {
-    fn from(number: f64) -> Self {
-        Value::Float(Number::new(number))
-    }
-}
-
-impl From<Number<i64>> for Value {
-    fn from(number: Number<i64>) -> Self {
-        Value::Int(number)
-    }
-}
-
-impl From<Number<f64>> for Value {
-    fn from(number: Number<f64>) -> Self {
-        Value::Float(number)
     }
 }
 
@@ -744,7 +756,11 @@ impl Value {
             Value::Float(number) => Ok(Value::String(number.to_string().into())),
             Value::Bool(boolean) => Ok(Value::String(boolean.to_string().into())),
             Value::DateTime(datetime) => Ok(Value::String(datetime.to_rfc3339().into())),
-            _ => Err(super::Error::CanNotCast(self.type_name(), STRING_TYPE)),
+            _ => Err(super::Error::CanNotCast(
+                self.type_name(),
+                STRING_TYPE,
+                self.clone(),
+            )),
         }
     }
 
@@ -756,7 +772,11 @@ impl Value {
                 value: if *boolean { 1.0 } else { 0.0 },
                 unit: None,
             })),
-            _ => Err(super::Error::CanNotCast(self.type_name(), FLOAT_TYPE)),
+            _ => Err(super::Error::CanNotCast(
+                self.type_name(),
+                FLOAT_TYPE,
+                self.clone(),
+            )),
         }
     }
 

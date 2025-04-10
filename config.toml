@@ -5,7 +5,7 @@ time_tracing=true
 tag = "data"
 type = "unix_socket"
 path = "/tmp/data.sock"
-protocol = "data_csv"
+protocol = "data_graphite"
 
 [[inbounds]]
 tag = "control"
@@ -76,3 +76,7 @@ fields = [
   { name = "name", type = "string" },
   { name = "value", type = "string", optional = true },
 ]
+
+[[protocols]]
+tag = "data_graphite"
+type = "graphite"

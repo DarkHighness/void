@@ -2,6 +2,7 @@ mod base;
 // mod csv;
 mod csv_nom;
 mod error;
+mod graphite_nom;
 
 pub use base::ProtocolParser;
 pub use error::{Error, Result};
@@ -16,5 +17,8 @@ where
         ProtocolConfig::CSV(cfg) => Ok(Box::new(csv_nom::CSVProtocolParser::try_create_from(
             reader, cfg,
         )?)),
+        ProtocolConfig::Graphite(cfg) => Ok(Box::new(
+            graphite_nom::GraphiteProtocolParser::try_create_from(reader, cfg)?,
+        )),
     }
 }
