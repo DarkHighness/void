@@ -1,8 +1,10 @@
 # Void
 
-Void 是一个高性能数据处理和传输工具，支持多种输入源和输出目标，主要用于时序数据的收集、转换和存储。
+Void 是一个数据处理和传输工具，支持多种输入源和输出目标，主要用于时序数据的收集、转换和存储。
 
-[![Build and Compress](https://github.com/darkhighness/void/actions/workflows/build.yml/badge.svg)](https://github.com/darkhighness/void/actions/workflows/build.yml)
+~~(其主要目的在于实验时, 期望在 Grafana 实时监控数据指标, 并保存成 Parquet 便于后续分析)~~
+
+[![Build](https://github.com/darkhighness/void/actions/workflows/build.yml/badge.svg)](https://github.com/darkhighness/void/actions/workflows/build.yml)
 
 ## 功能特点
 
@@ -129,7 +131,7 @@ RUST_LOG=debug ./void
 
 Void使用结构化日志输出信息:
 
-- 日志输出到标准输出及`output.log`文件
+- 日志输出到标准输出及日志文件
 - 使用`RUST_LOG`环境变量控制日志级别
 
 ## 许可证

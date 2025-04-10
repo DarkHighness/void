@@ -21,6 +21,7 @@ fern = { version = "0.7", features = ["colored"] }
 jiff = "0.2"
 
 # Cli
+clap = { version = "4.5", features = ["derive"] }
 ctrlc = "3.4"
 thiserror = "2.0"
 anyhow = "1.0"
@@ -41,7 +42,6 @@ async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 serde_json = "1.0"
-csv-core = "0.1"
 bytes = "1.10"
 
 # Concurrent Utilities

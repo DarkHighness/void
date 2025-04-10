@@ -3,8 +3,12 @@ pub(crate) mod core;
 pub(crate) mod utils;
 
 use core::manager;
-use std::{fmt::Arguments, path::PathBuf};
+use std::{
+    fmt::Arguments,
+    path::{Path, PathBuf},
+};
 
+use clap::Parser;
 use config::Config;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::{info, warn};
@@ -15,7 +19,20 @@ use jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-fn setup_logger() -> std::result::Result<(), fern::InitError> {
+/// Void 应用程序
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// 配置文件路径
+    #[arg(short, long, default_value = "config.toml")]
+    config: PathBuf,
+
+    /// 日志文件输出路径
+    #[arg(short, long, default_value = "output.log")]
+    log_file: PathBuf,
+}
+
+fn setup_logger(log_file_path: &Path) -> std::result::Result<(), fern::InitError> {
     let colors = ColoredLevelConfig::new()
         .debug(Color::Cyan)
         .error(Color::Red)
@@ -63,7 +80,7 @@ fn setup_logger() -> std::result::Result<(), fern::InitError> {
     let file_dispatch = fern::Dispatch::new()
         .format(make_formatter(false))
         .level(log_level)
-        .chain(fern::log_file("output.log")?);
+        .chain(fern::log_file(log_file_path)?);
 
     let stdout_dispatch = fern::Dispatch::new()
         .format(make_formatter(true))
@@ -82,12 +99,16 @@ fn setup_logger() -> std::result::Result<(), fern::InitError> {
 pub async fn main() -> miette::Result<()> {
     console_subscriber::init();
 
-    setup_logger().into_diagnostic()?;
+    let args = Args::parse();
+
+    setup_logger(args.log_file.as_path()).into_diagnostic()?;
 
     info!("Starting the application");
-    let path = PathBuf::from("config.toml");
-    let config = Config::load_from_file(&path)?;
-    info!("Loaded config from {}", path.display());
+    info!("Using config file: {}", args.config.display());
+    info!("Writing logs to: {}", args.log_file.display());
+
+    let config = Config::load_from_file(&args.config)?;
+    info!("Loaded config from {}", args.config.display());
 
     let ctx = tokio_util::sync::CancellationToken::new();
     let child_token = ctx.child_token();
