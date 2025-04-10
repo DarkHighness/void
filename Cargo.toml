@@ -2,6 +2,9 @@
 name = "void"
 version = "0.1.0"
 edition = "2021"
+authors = ["Twiliness"]
+description = "Void application"
+repository = "https://github.com/darkhighness/void"
 
 [profile.release]
 strip = "symbols"
