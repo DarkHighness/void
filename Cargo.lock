@@ -2959,6 +2959,7 @@ dependencies = [
  "lasso",
  "log",
  "miette",
+ "nix",
  "nom 8.0.0",
  "num_cpus",
  "once_cell",

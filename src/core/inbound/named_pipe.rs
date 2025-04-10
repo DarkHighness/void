@@ -1,15 +1,15 @@
-// pub(crate) mod connection;
-
 use std::path::PathBuf;
 
 use async_trait::async_trait;
-// use connection::UnixConnection;
 use log::info;
 use tokio::{net::UnixListener, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::{inbound::unix::UnixSocketConfig, ProtocolConfig},
+    config::{
+        inbound::{named_pipe::NamedPipeConfig, unix::UnixSocketConfig},
+        ProtocolConfig,
+    },
     core::{
         actor::Actor,
         inbound::instance::ReaderBasedInstance,
@@ -21,24 +21,21 @@ use crate::{
 use super::base::Inbound;
 use super::error::Result;
 
-// pub const UNIX_SOCKET_CONNECTION_BUFFER_SIZE: usize = 64;
-
-pub(crate) struct UnixSocketInbound {
+pub(crate) struct NamedPipeInbound {
     tag: TagId,
     path: PathBuf,
 
-    listener: UnixListener,
     ctx: CancellationToken,
 
-    connections: Vec<JoinHandle<()>>,
+    handle: Option<JoinHandle<()>>,
 
     outbound: TaggedSender,
     protocol: ProtocolConfig,
 }
 
-impl UnixSocketInbound {
+impl NamedPipeInbound {
     pub fn try_create_from(
-        cfg: UnixSocketConfig,
+        cfg: NamedPipeConfig,
         protocol_cfg: ProtocolConfig,
         channel_graph: &mut ChannelGraph,
     ) -> Result<Self> {
@@ -53,16 +50,13 @@ impl UnixSocketInbound {
         }
 
         let tag = cfg.tag.into();
-
-        let socket = UnixListener::bind(&path)?;
         let outbound = channel_graph.sender(&tag);
 
-        let inbound = UnixSocketInbound {
+        let inbound = NamedPipeInbound {
             tag,
             path,
-            listener: socket,
+            handle: None,
             ctx: CancellationToken::new(),
-            connections: Vec::new(),
             outbound,
             protocol: protocol_cfg,
         };
@@ -76,50 +70,56 @@ impl UnixSocketInbound {
     }
 }
 
-impl Drop for UnixSocketInbound {
+impl Drop for NamedPipeInbound {
     fn drop(&mut self) {
         if let Err(e) = std::fs::remove_file(&self.path) {
-            log::error!("Failed to remove socket file: {:?}", e);
+            log::error!("Failed to remove named pipe file: {:?}", e);
         }
 
         self.ctx.cancel();
     }
 }
 
-impl HasTag for UnixSocketInbound {
+impl HasTag for NamedPipeInbound {
     fn tag(&self) -> &TagId {
         &self.tag
     }
 }
 
 #[async_trait]
-impl Actor for UnixSocketInbound {
+impl Actor for NamedPipeInbound {
     type Error = super::Error;
     async fn poll(
         &mut self,
         ctx: tokio_util::sync::CancellationToken,
     ) -> miette::Result<(), super::Error> {
-        let new_connection = self.listener.accept();
+        if self.handle.is_none() {
+            // make fifo pipe
+            nix::unistd::mkfifo(
+                &self.path,
+                nix::sys::stat::Mode::S_IRWXU
+                    | nix::sys::stat::Mode::S_IRWXG
+                    | nix::sys::stat::Mode::S_IRWXO,
+            )?;
 
-        tokio::select! {
-            _ = ctx.cancelled() => return Ok(()),
-            Ok((stream, addr)) = new_connection => {
-                info!("inbound \"{}\" accept new connection \"{:?}\" ", self.tag, addr);
-                let handle = ReaderBasedInstance::try_create_from(
-                    self.tag.clone(),
-                    format!("unix({:?})", addr),
-                    stream,
-                    self.protocol.clone(),
-                    self.outbound.clone(),
-                    self.ctx.clone(),
-                )?;
-                self.connections.push(handle);
-                info!("inbound \"{}\" spawn a new connection \"{:?}\" ", self.tag, addr);
-            }
+            let receiver = tokio::net::unix::pipe::OpenOptions::new().open_receiver(&self.path)?;
+
+            let reader = ReaderBasedInstance::try_create_from(
+                self.tag.clone(),
+                self.path.display().to_string(),
+                receiver,
+                self.protocol.clone(),
+                self.outbound.clone(),
+                ctx.clone(),
+            )?;
+
+            self.handle = Some(reader);
         }
+
+        tokio::task::yield_now().await;
 
         Ok(())
     }
 }
 
-impl Inbound for UnixSocketInbound {}
+impl Inbound for NamedPipeInbound {}

@@ -2,6 +2,12 @@
 time_tracing=true
 
 [[inbounds]]
+tag = "data_np"
+type = "named_pipe"
+path = "/tmp/data_np"
+protocol = "data_csv"
+
+[[inbounds]]
 tag = "data"
 type = "unix_socket"
 path = "/tmp/data.sock"
@@ -33,7 +39,7 @@ disabled = false
 
 [[pipes]]
 type = "timeseries"
-inbounds = ["inbound:data"]
+inbounds = ["inbound:data", "inbound:data_np"]
 # values = ["utilization.gpu", "temperature.gpu", "power.draw", "clocks.gr", "clocks.mem",
 #   "clocks_throttle_reasons.hw_slowdown", "clocks_throttle_reasons.hw_thermal_slowdown",
 #   "clocks_throttle_reasons.sw_power_cap", "clocks_throttle_reasons.hw_power_brake_slowdown",
