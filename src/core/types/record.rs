@@ -10,6 +10,7 @@ use super::{Symbol, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Attribute {
+    Id,
     Inbound,
     Type,
 }
@@ -19,6 +20,7 @@ impl Display for Attribute {
         match self {
             Attribute::Inbound => write!(f, "__inbound__"),
             Attribute::Type => write!(f, "__type__"),
+            Attribute::Id => write!(f, "__id__"),
         }
     }
 }

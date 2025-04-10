@@ -9,8 +9,8 @@ pub use super::data_type::{
 };
 use super::Primitive;
 
-pub const MAP_TYPE: &'static str = "map";
-pub const ARRAY_TYPE: &'static str = "array";
+pub const MAP_TYPE: &'static str = "Map";
+pub const ARRAY_TYPE: &'static str = "Array";
 
 // Add Guard type definition
 pub struct StringGuard<'a>(&'a super::string::Symbol);

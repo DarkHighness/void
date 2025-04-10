@@ -2,7 +2,11 @@ use serde_json::{Map, Value as JsonValue};
 use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::core::types::{intern, resolve, value::Number, Record, Value};
+use crate::core::types::{
+    intern, resolve,
+    value::{Number, STRING_TYPE},
+    Record, Value,
+};
 
 #[derive(Debug, Error)]
 pub enum ConversionError {
@@ -23,46 +27,47 @@ impl TryFrom<&Value> for JsonValue {
                 if f.is_nan() {
                     JsonValue::Null
                 } else if f.is_infinite() {
-                    if f.is_sign_positive() {
-                        JsonValue::String("Infinity".into())
-                    } else {
-                        JsonValue::String("-Infinity".into())
-                    }
+                    JsonValue::String(
+                        if f.is_sign_positive() {
+                            "Infinity"
+                        } else {
+                            "-Infinity"
+                        }
+                        .into(),
+                    )
                 } else {
-                    match serde_json::Number::from_f64(f) {
-                        Some(num) => JsonValue::Number(num),
-                        None => JsonValue::Null,
-                    }
+                    serde_json::Number::from_f64(f)
+                        .map(JsonValue::Number)
+                        .unwrap_or(JsonValue::Null)
                 }
             }
             Value::String(s) => JsonValue::String(s.to_string()),
-            Value::Array(arr) => {
-                let json_array = arr
-                    .iter()
-                    .map(|v| JsonValue::try_from(v))
-                    .collect::<Result<Vec<_>, _>>()?;
-                JsonValue::Array(json_array)
-            }
+            Value::Array(arr) => JsonValue::Array(
+                arr.iter()
+                    .map(JsonValue::try_from)
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
             Value::Map(map) => {
                 let mut json_map = Map::new();
                 for (key, val) in map {
                     let key_guard = key
                         .string()
-                        .map_err(|_| ConversionError::InvalidType("String", key.type_name()))?;
-                    json_map.insert(key_guard.as_str().into(), JsonValue::try_from(val)?);
+                        .map_err(|_| ConversionError::InvalidType(STRING_TYPE, key.type_name()))?;
+
+                    let key_str = key_guard.as_str();
+
+                    json_map.insert(key_str.into(), JsonValue::try_from(val)?);
                 }
                 JsonValue::Object(json_map)
             }
-            Value::DateTime(dt) => {
-                let dt_str = dt.to_string();
-                JsonValue::String(dt_str)
-            }
+            Value::DateTime(dt) => JsonValue::String(dt.to_string()),
         };
 
         Ok(json_value)
     }
 }
 
+// 直接复用引用实现
 impl TryFrom<Value> for JsonValue {
     type Error = ConversionError;
     fn try_from(value: Value) -> std::result::Result<Self, Self::Error> {
@@ -87,21 +92,18 @@ impl TryFrom<&JsonValue> for Value {
                 }
             }
             JsonValue::String(s) => {
-                // Handle special floating point values
-                if s == "Infinity" {
-                    return Ok(Value::Float(Number::new(f64::INFINITY)));
-                } else if s == "-Infinity" {
-                    return Ok(Value::Float(Number::new(f64::NEG_INFINITY)));
+                // 处理特殊浮点值
+                match s.as_str() {
+                    "Infinity" => Ok(Value::Float(Number::new(f64::INFINITY))),
+                    "-Infinity" => Ok(Value::Float(Number::new(f64::NEG_INFINITY))),
+                    _ => Ok(Value::String(intern(s))),
                 }
-                Ok(Value::String(intern(s)))
             }
-            JsonValue::Array(arr) => {
-                let values = arr
-                    .iter()
-                    .map(|v| Value::try_from(v))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(Value::Array(values))
-            }
+            JsonValue::Array(arr) => Ok(Value::Array(
+                arr.iter()
+                    .map(Value::try_from)
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
             JsonValue::Object(map) => {
                 let mut values = HashMap::new();
                 for (k, v) in map {
@@ -113,6 +115,7 @@ impl TryFrom<&JsonValue> for Value {
     }
 }
 
+// 直接复用引用实现
 impl TryFrom<JsonValue> for Value {
     type Error = ConversionError;
     fn try_from(json: JsonValue) -> std::result::Result<Self, Self::Error> {
@@ -125,19 +128,18 @@ impl Record {
     pub fn to_json(&self) -> std::result::Result<JsonValue, ConversionError> {
         let mut map = Map::new();
 
-        // Convert regular values
+        // 合并处理常规字段和属性字段
+        // 转换常规值
         for (key, value) in self.iter() {
             map.insert(resolve(key).into(), JsonValue::try_from(value)?);
         }
 
-        // Convert attributes
+        // 转换属性
         for (key, value) in self.attributes().iter() {
             map.insert(key.to_string(), JsonValue::try_from(value)?);
         }
 
-        let json_value = JsonValue::Object(map);
-
-        Ok(json_value)
+        Ok(JsonValue::Object(map))
     }
 
     /// Create a Record from a serde_json::Value
@@ -147,26 +149,22 @@ impl Record {
                 let mut record = Record::empty();
 
                 for (key, val) in map {
-                    // Check if key is an attribute (starts with "__" and ends with "__")
+                    // 检查是否为属性字段（以"__"开头和结尾）
                     if key.starts_with("__") && key.ends_with("__") {
-                        // Handle attribute keys
-                        match key.as_str() {
-                            "__type__" => {
-                                if let JsonValue::String(type_val) = val {
-                                    record.set_attribute(
-                                        crate::core::types::Attribute::Type,
-                                        Value::String(intern(type_val)),
-                                    );
-                                }
+                        // 处理特殊属性
+                        if key == "__type__" {
+                            if let JsonValue::String(type_val) = val {
+                                record.set_attribute(
+                                    crate::core::types::Attribute::Type,
+                                    Value::String(intern(type_val)),
+                                );
                             }
-                            // Add other attribute handlers as needed
-                            _ => {
-                                // For unknown attributes, just add them as regular fields
-                                record.set(intern(key), Value::try_from(val)?);
-                            }
+                        } else {
+                            // 对于未知属性，作为普通字段添加
+                            record.set(intern(key), Value::try_from(val)?);
                         }
                     } else {
-                        // Regular key-value pair
+                        // 常规键值对
                         record.set(intern(key), Value::try_from(val)?);
                     }
                 }
@@ -183,7 +181,7 @@ impl Record {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::types::{intern, Attribute};
+    use crate::core::types::{intern, value::INT_TYPE, Attribute};
     use serde_json::json;
 
     #[test]
@@ -406,5 +404,160 @@ mod tests {
             round_trip.get_attribute(&Attribute::Type),
             record.get_attribute(&Attribute::Type)
         );
+    }
+
+    #[test]
+    fn test_conversion_errors() {
+        // Test invalid map key error
+        let mut map = HashMap::new();
+        map.insert(Value::Int(Number::new(123)), Value::Bool(true));
+        let value = Value::Map(map);
+
+        let result = JsonValue::try_from(&value);
+        assert!(result.is_err());
+        if let Err(ConversionError::InvalidType(expected, actual)) = result {
+            assert_eq!(expected, STRING_TYPE);
+            assert_eq!(actual, INT_TYPE);
+        } else {
+            panic!("Expected InvalidType error");
+        }
+
+        // Test invalid JSON structure for Record
+        let json_val = JsonValue::Array(vec![JsonValue::String("not an object".into())]);
+        let result = Record::from_json(&json_val);
+        assert!(result.is_err());
+        if let Err(ConversionError::InvalidType(expected, actual)) = result {
+            assert_eq!(expected, "Object");
+            assert_eq!(actual, "non-object JSON value");
+        } else {
+            panic!("Expected InvalidType error");
+        }
+    }
+
+    #[test]
+    fn test_large_numbers() {
+        // Test large integer and float values
+        let large_int = Value::Int(Number::new(i64::MAX));
+        let large_int_json = JsonValue::try_from(&large_int).unwrap();
+        assert_eq!(large_int_json, JsonValue::Number(i64::MAX.into()));
+
+        let large_float = Value::Float(Number::new(1.7976931348623157e308)); // DBL_MAX
+        let large_float_json = JsonValue::try_from(&large_float).unwrap();
+        assert!(matches!(large_float_json, JsonValue::Number(_)));
+    }
+
+    #[test]
+    fn test_empty_collections() {
+        // Test empty array
+        let empty_arr = Value::Array(vec![]);
+        let empty_arr_json = JsonValue::try_from(&empty_arr).unwrap();
+        assert_eq!(empty_arr_json, JsonValue::Array(vec![]));
+
+        // Test empty map
+        let empty_map = Value::Map(HashMap::new());
+        let empty_map_json = JsonValue::try_from(&empty_map).unwrap();
+        assert_eq!(empty_map_json, JsonValue::Object(Map::new()));
+
+        // Test empty record
+        let empty_record = Record::empty();
+        let empty_record_json = empty_record.to_json().unwrap();
+        assert_eq!(empty_record_json, JsonValue::Object(Map::new()));
+    }
+
+    #[test]
+    fn test_record_with_complex_attributes() {
+        let mut record = Record::empty();
+
+        // Add multiple attributes
+        record.set_attribute(Attribute::Type, Value::String(intern("Complex")));
+        record.set_attribute(Attribute::Id, Value::Int(Number::new(42)));
+
+        // Add regular fields
+        record.set(intern("data"), Value::String(intern("value")));
+
+        // Convert to JSON
+        let json = record.to_json().unwrap();
+
+        // Expected JSON should contain both regular fields and attributes
+        let expected = json!({
+            "data": "value",
+            "__type__": "Complex",
+            "__id__": 42
+        });
+
+        assert_eq!(json, expected);
+
+        // Test round trip
+        let round_trip = Record::from_json(&json).unwrap();
+        assert_eq!(
+            round_trip.get_attribute(&Attribute::Type).unwrap(),
+            &Value::String(intern("Complex"))
+        );
+        assert_eq!(
+            round_trip.get(&intern("data")).unwrap(),
+            &Value::String(intern("value"))
+        );
+    }
+
+    #[test]
+    fn test_unknown_attributes() {
+        // Test JSON with unknown attribute fields
+        let json_val = json!({
+            "name": "test",
+            "__custom__": "unknown attribute",
+            "__type__": "Person"
+        });
+
+        let record = Record::from_json(&json_val).unwrap();
+
+        // Unknown attributes should be treated as regular fields
+        assert_eq!(
+            record.get(&intern("__custom__")).unwrap(),
+            &Value::String(intern("unknown attribute"))
+        );
+
+        // Known attributes should be properly handled
+        assert_eq!(
+            record.get_attribute(&Attribute::Type).unwrap(),
+            &Value::String(intern("Person"))
+        );
+    }
+
+    #[test]
+    fn test_datetime_conversion() {
+        use chrono::{DateTime, Utc};
+
+        // Create a datetime value
+        let now = Utc::now();
+        let dt_value = Value::DateTime(now);
+
+        // Convert to JSON
+        let json_value = JsonValue::try_from(&dt_value).unwrap();
+
+        // Should be represented as string in JSON
+        assert!(matches!(json_value, JsonValue::String(_)));
+
+        if let JsonValue::String(dt_str) = json_value {
+            assert_eq!(dt_str, now.to_string());
+        }
+    }
+
+    #[test]
+    fn test_unsigned_numbers() {
+        // Test u64 number that is larger than i64::MAX
+        let big_uint = serde_json::Number::from(u64::MAX);
+        let json_val = JsonValue::Number(big_uint);
+
+        // When converting to Value, it should be truncated to i64
+        let result = Value::try_from(&json_val);
+        assert!(result.is_ok());
+
+        match result.unwrap() {
+            Value::Int(n) => {
+                // Value should be truncated to i64
+                assert_eq!(n.value, u64::MAX as i64);
+            }
+            _ => panic!("Expected Value::Int"),
+        }
     }
 }

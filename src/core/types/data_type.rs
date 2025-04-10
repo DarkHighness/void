@@ -14,12 +14,12 @@ pub enum Primitive {
     DateTime,
 }
 
-pub const NULL_TYPE: &'static str = "null";
-pub const STRING_TYPE: &'static str = "string";
-pub const INT_TYPE: &'static str = "int";
-pub const FLOAT_TYPE: &'static str = "float";
-pub const BOOL_TYPE: &'static str = "bool";
-pub const DATETIME_TYPE: &'static str = "datetime";
+pub const NULL_TYPE: &'static str = "Null";
+pub const STRING_TYPE: &'static str = "String";
+pub const INT_TYPE: &'static str = "Int";
+pub const FLOAT_TYPE: &'static str = "Float";
+pub const BOOL_TYPE: &'static str = "Bool";
+pub const DATETIME_TYPE: &'static str = "Datetime";
 
 impl Primitive {
     pub fn as_str(&self) -> &'static str {
