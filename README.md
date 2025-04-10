@@ -70,34 +70,35 @@ protocol = "data_graphite"
 定义数据输入源:
 
 - `named_pipe`: 从命名管道读取数据
-- `unix_socket`: 从Unix套接字读取数据
+- `unix_socket`: 从 Unix 套接字读取数据
 
 #### 出站配置 (Outbounds)
 
 定义数据输出目标:
 
 - `stdio`: 输出到标准输出
-- `parquet`: 输出到Parquet文件
-- `prometheus`: 暴露指标给Prometheus抓取
+- `parquet`: 输出到 Parquet 文件
+- `prometheus`: 通过 Remote Write 写入 Prometheus
 
 #### 管道配置 (Pipes)
 
 定义数据处理逻辑:
 
 - `timeseries`: 处理时序数据
-- `timeseries_annotate`: 为时序数据添加注解
+- `timeseries_annotate`: 为时序数据添加注解 (支持动态添加或删除 Labels)
 
 #### 协议配置 (Protocols)
 
 定义数据协议格式:
 
-- `csv`: CSV格式数据，可定义字段类型
-- `graphite`: Graphite格式数据
+- `csv`: CSV 格式数据，可定义字段类型
+- `graphite`: Graphite 格式数据
 
 ### 环境变量
 
 - `RUST_LOG`: 设置日志级别 (默认: info)
 - 配置中可以使用 `env:VAR_NAME` 语法引用环境变量
+- 部分配置支持占位符, 如 `{{HOME}}`
 
 ### 运行
 
@@ -111,7 +112,7 @@ RUST_LOG=debug ./void
 
 ## 示例
 
-### 收集GPU指标并存储为Parquet文件
+### 收集GPU指标并存储为 Parquet 文件
 
 1. 创建一个配置文件，如上面示例所示
 2. 运行 Void: `./void`
