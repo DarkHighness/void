@@ -135,7 +135,7 @@ impl GlobalTracing {
             return;
         }
 
-        let mut entry = self.buffer.entry(range.key).or_insert_with(Vec::new);
+        let mut entry = self.buffer.entry(range.key).or_default();
         entry.push(range.elapsed);
     }
 

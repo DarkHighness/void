@@ -3,6 +3,13 @@ name = "void"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+strip = "symbols"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+
 [dependencies]
 jemallocator = { version = "*" }
 # Logging
@@ -48,6 +55,9 @@ lasso = { version = "0.7.3", features = ["multi-threaded"]}
 uuid = { version = "1.16.0", features = ["v4"] }
 rand = "0.9.0"
 hostname = "0.4.1"
+regex = "1.11.1"
+nix = "0.29.0"
+num_cpus = "1.16.0"
 
 # Graph
 petgraph = "0.8"
@@ -58,13 +68,16 @@ reqwest = { version = "0.12.15", features = ["http2", "charset", "stream", "rust
 # Protobuf
 prost = "0.13.5"
 snap = "1.1.1"
-paste = "1.0.15"
-num_cpus = "1.16.0"
+
+# Parsing
 nom = "8"
+
+# Parquet
 parquet = "54.3.1"
 arrow = "54.3.1"
-regex = "1.11.1"
-nix = "0.29.0"
+
+# Macros
+paste = "1.0.15"
 
 [dev-dependencies]
 tempfile = "3.19.1"

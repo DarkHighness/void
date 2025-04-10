@@ -159,10 +159,7 @@ impl<'de> Deserialize<'de> for TagId {
             _ => return Err(serde::de::Error::custom("Invalid ScopedTagId scope")),
         };
 
-        Ok(TagId {
-            scope,
-            name: name.into(),
-        })
+        Ok(TagId { scope, name })
     }
 }
 

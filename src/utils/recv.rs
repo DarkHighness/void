@@ -137,7 +137,7 @@ pub async fn recv_batch(
             }
         };
 
-        while let Some(record) = inbounds[last_active_index].try_recv().ok() {
+        while let Ok(record) = inbounds[last_active_index].try_recv() {
             records.push(record);
             if records.len() >= num_records || now.elapsed() >= timeout {
                 return Ok(records);
