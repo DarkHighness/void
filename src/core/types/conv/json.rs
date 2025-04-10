@@ -385,7 +385,7 @@ mod tests {
 
         let mut nested_map = HashMap::new();
         nested_map.insert(intern("key").into(), Value::String(intern("value")));
-        record.set(intern("metadata").into(), Value::Map(nested_map));
+        record.set(intern("metadata"), Value::Map(nested_map));
         record.set_attribute(Attribute::Type, Value::String(intern("TestRecord")));
 
         // Convert to JSON and back

@@ -394,11 +394,10 @@ mod tests {
 
     #[test]
     fn test_write_request_from_timeseries() {
-        let mut labels = Vec::new();
-        labels.push(Label {
+        let labels = vec![Label {
             name: "__name__".to_string(),
             value: "test_metric".to_string(),
-        });
+        }];
 
         let sample = Sample {
             value: 42.0,
@@ -415,11 +414,10 @@ mod tests {
 
     #[test]
     fn test_encode_proto3() {
-        let mut labels = Vec::new();
-        labels.push(Label {
+        let labels = vec![Label {
             name: "__name__".to_string(),
             value: "test_metric".to_string(),
-        });
+        }];
 
         let sample = Sample {
             value: 42.0,
